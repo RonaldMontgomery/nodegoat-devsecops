@@ -1,0 +1,11 @@
+# A custom .semgrepignore replaces Semgrep's defaults, so restate them.
+node_modules/
+.git/
+
+# Custom-rule fixtures contain intentional violations; `semgrep --test .semgrep/` exercises them.
+.semgrep/
+
+# Vendored, minified third-party browser libraries (jQuery 1.10.2, Bootstrap, etc.).
+# Not first-party code. Known gap: Trivy does not detect vendored JS either.
+# Tracked in docs/draft-pipeline-review.md for replacement via npm.
+app/assets/vendor/

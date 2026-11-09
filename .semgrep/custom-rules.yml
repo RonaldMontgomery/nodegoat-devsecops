@@ -1,0 +1,52 @@
+rules:
+  # Carried over from my-app (Lab 4).
+  - id: no-child-process-exec
+    pattern: require("child_process").exec(...)
+    message: >
+      Avoid child_process.exec() because it invokes a shell and can create
+      command-injection risk if untrusted input reaches the command.
+      Prefer safer APIs such as execFile() or spawn() with separated arguments.
+    languages:
+      - javascript
+    severity: ERROR
+
+  # Midterm plan: custom rule for a hard-coded session secret (threat T4).
+  # Upstream NodeGoat shipped cookieSecret: "session_cookie_secret_key_here".
+  - id: express-session-hardcoded-secret
+    patterns:
+      - pattern-either:
+          - pattern: '$F({..., $KEY: "...", ...})'
+          - pattern: '$X = {..., $KEY: "...", ...}'
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: '^"?(secret|cookieSecret|sessionSecret|session_secret|cryptoKey)"?$'
+    message: >
+      A session or crypto secret is set to a string literal. Anyone with read
+      access to the source can forge session cookies. Read the value from the
+      environment (populated from a secrets manager) and fail closed when it
+      is missing.
+    languages:
+      - javascript
+    severity: ERROR
+
+  # NodeGoat A1 (server-side JavaScript injection) in app/routes/contributions.js.
+  - id: eval-of-request-input
+    mode: taint
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.body
+          - pattern: $REQ.query
+          - pattern: $REQ.params
+    pattern-sinks:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+          - pattern: setTimeout($CODE, ...)
+    message: >
+      Request input flows into eval()/Function()/setTimeout(string). This is
+      server-side JavaScript injection: an attacker can run arbitrary code in
+      the Node.js process. Parse the value instead (for example
+      parseInt(value, 10)) and validate it.
+    languages:
+      - javascript
+    severity: ERROR
