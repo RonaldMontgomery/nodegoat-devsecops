@@ -29,3 +29,17 @@ test/e2e/videos/
 
 # ignore Snyk Code scanner files
 .dccache
+
+# Secrets and key material (Lab 2)
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Pipeline output
+sbom.json
+*.tar.gz
+tfplan
+tfplan.json
+infra/.terraform/
+infra/*.tfstate*
