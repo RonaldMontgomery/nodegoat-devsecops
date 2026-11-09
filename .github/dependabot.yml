@@ -1,0 +1,32 @@
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    cooldown:
+      default-days: 7
+
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    cooldown:
+      default-days: 7
+
+  # New for NodeGoat: keep the Dockerfile base images current.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    cooldown:
+      default-days: 7
