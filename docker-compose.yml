@@ -1,17 +1,93 @@
-version: "3.7"
+# Local and EC2 runtime. Hardened from upstream NodeGoat (Lab 6, threats T5-T7):
+# - MongoDB has no published port and sits on an internal-only network
+# - the app port binds to localhost only (reach EC2 through an SSM tunnel)
+# - non-root, read-only root filesystem, all capabilities dropped, no-new-privileges
+# - CPU/memory limits; secrets come from the git-ignored .env file
+#
+# Usage:  cp .env.example .env   # fill in values
+#         docker compose up --build
+
+name: nodegoat
 
 services:
-  web:
-    build: .
-    environment:
-      NODE_ENV:
-      MONGODB_URI: mongodb://mongo:27017/nodegoat
-    command: sh -c "until nc -z -w 2 mongo 27017 && echo 'mongo is ready for connections' && node artifacts/db-reset.js && npm start; do sleep 2; done"
-    ports:
-      - "4000:4000"
-
   mongo:
     image: mongo:4.4
-    user: mongodb
+    user: "999:999"
     expose:
-      - 27017
+      - "27017"
+    networks:
+      - backend
+    volumes:
+      - mongo-data:/data/db
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "mongo", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  # One-shot job: load the synthetic seed data, then exit.
+  seed:
+    build: .
+    image: nodegoat:local
+    command: ["artifacts/db-reset.js"]
+    environment: &app-env
+      MONGODB_URI: mongodb://mongo:27017/nodegoat
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      CRYPTO_KEY: ${CRYPTO_KEY:?set CRYPTO_KEY in .env}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - backend
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  web:
+    image: nodegoat:local
+    environment: *app-env
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:4000:4000"
+    networks:
+      - frontend
+      - backend
+    user: "65532:65532"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+networks:
+  frontend: {}
+  backend:
+    internal: true
+
+volumes:
+  mongo-data: {}
