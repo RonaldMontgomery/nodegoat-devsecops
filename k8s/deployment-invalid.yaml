@@ -1,0 +1,62 @@
+# Intentionally noncompliant copy of k8s/deployment.yaml with the resources block removed.
+# Kyverno (k8s/policy.yaml) and Conftest (policy/k8s) must both reject it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodegoat
+  namespace: nodegoat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nodegoat
+  template:
+    metadata:
+      labels:
+        app: nodegoat
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: nodegoat
+        image: nodegoat:local
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 4000
+        env:
+        - name: MONGODB_URI
+          value: mongodb://mongo.nodegoat.svc.cluster.local:27017/nodegoat
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: nodegoat-secrets
+              key: SESSION_SECRET
+        - name: CRYPTO_KEY
+          valueFrom:
+            secretKeyRef:
+              name: nodegoat-secrets
+              key: CRYPTO_KEY
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        readinessProbe:
+          httpGet:
+            path: /login
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}

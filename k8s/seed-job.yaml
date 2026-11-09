@@ -1,0 +1,53 @@
+# One-shot job that loads NodeGoat's synthetic seed users into MongoDB.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nodegoat-seed
+  namespace: nodegoat
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: nodegoat-seed
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: nodegoat:local
+          imagePullPolicy: IfNotPresent
+          args: ["artifacts/db-reset.js"]
+          env:
+            - name: MONGODB_URI
+              value: mongodb://mongo.nodegoat.svc.cluster.local:27017/nodegoat
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: nodegoat-secrets
+                  key: SESSION_SECRET
+            - name: CRYPTO_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nodegoat-secrets
+                  key: CRYPTO_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

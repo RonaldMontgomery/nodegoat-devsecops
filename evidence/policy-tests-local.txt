@@ -24,3 +24,17 @@ PASS: 5/5
 $ conftest verify --policy policy/compose
 
 6 tests, 6 passed, 0 warnings, 0 failures, 0 exceptions, 0 skipped
+
+$ conftest verify --policy policy/k8s
+
+6 tests, 6 passed, 0 warnings, 0 failures, 0 exceptions, 0 skipped
+
+$ conftest test --policy policy/k8s --namespace k8s k8s/namespace.yaml k8s/mongo.yaml k8s/deployment.yaml k8s/seed-job.yaml k8s/policy.yaml
+
+49 tests, 49 passed, 0 warnings, 0 failures, 0 exceptions
+
+$ conftest test --policy policy/k8s --namespace k8s k8s/deployment-invalid.yaml
+FAIL - k8s/deployment-invalid.yaml - k8s - Deployment/nodegoat: container nodegoat must set a cpu limit
+FAIL - k8s/deployment-invalid.yaml - k8s - Deployment/nodegoat: container nodegoat must set a memory limit
+
+7 tests, 5 passed, 0 warnings, 2 failures, 0 exceptions

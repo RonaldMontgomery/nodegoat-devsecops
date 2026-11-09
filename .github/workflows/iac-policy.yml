@@ -80,6 +80,21 @@ jobs:
       - name: Conftest - docker-compose.yml
         run: conftest test --policy policy/compose --namespace compose docker-compose.yml
 
+      - name: Conftest - Kubernetes manifests
+        run: |
+          conftest verify --policy policy/k8s
+          conftest test --policy policy/k8s --namespace k8s \
+            k8s/namespace.yaml k8s/mongo.yaml k8s/deployment.yaml k8s/seed-job.yaml k8s/policy.yaml
+
+      - name: Conftest - known-bad manifest must be rejected
+        shell: bash
+        run: |
+          if conftest test --policy policy/k8s --namespace k8s k8s/deployment-invalid.yaml; then
+            echo "k8s/deployment-invalid.yaml unexpectedly passed policy"
+            exit 1
+          fi
+          echo "Rejected as expected."
+
   plan:
     name: Terraform plan + OPA evaluation
     needs: static
