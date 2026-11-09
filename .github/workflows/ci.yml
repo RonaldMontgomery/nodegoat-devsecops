@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Disposable MongoDB for the smoke test (synthetic seed data only).
+    services:
+      mongo:
+        image: mongo:4.4
+        ports:
+          - 127.0.0.1:27017:27017
+
+    env:
+      # Cypress (upstream e2e devDependency) is not used in CI; skip its 150 MB binary.
+      CYPRESS_INSTALL_BINARY: "0"
+      MONGODB_URI: mongodb://127.0.0.1:27017/nodegoat
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (upstream jshint config)
+        run: npx --no-install jshint .
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Smoke test against seeded MongoDB
+        run: ./scripts/smoke-test.sh
+
+      - name: Build
+        run: npm run build --if-present
+
+      - name: Package application
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='node_modules' \
+            --exclude='coverage' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='.npmrc' \
+            --exclude='infra/.terraform' \
+            -czf "$RUNNER_TEMP/app.tar.gz" .
+
+      - name: Upload application package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-${{ github.sha }}
+          path: ${{ runner.temp }}/app.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  aws-oidc:
+    name: Verify AWS OIDC
+    needs: build-test
+    # Runs only on main, and only once the AWS_ROLE_ARN repository variable exists
+    # (the IAM trust policy must name this repository's OIDC subject first).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Show OIDC subject and audience
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const claims = JSON.parse(
+              Buffer.from(token.split('.')[1], 'base64url').toString()
+            );
+            core.info(`Subject: ${claims.sub}`);
+            core.info(`Audience: ${claims.aud}`);
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Verify identity
+        run: aws sts get-caller-identity

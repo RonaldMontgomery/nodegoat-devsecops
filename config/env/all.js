@@ -1,3 +1,5 @@
+"use strict";
+
 // default app configuration
 //
 // Secrets are never stored in source control (Lab 2 / threat T4).
