@@ -1,0 +1,126 @@
+name: IaC Policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "policy/**"
+      - "k8s/**"
+      - "docker-compose.yml"
+      - ".github/workflows/iac-policy.yml"
+  pull_request:
+    paths:
+      - "infra/**"
+      - "policy/**"
+      - "k8s/**"
+      - "docker-compose.yml"
+      - ".github/workflows/iac-policy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Terraform, Checkov, OPA and Conftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~1.13"
+          terraform_wrapper: false
+
+      - name: Terraform format
+        run: terraform -chdir=infra fmt -check -recursive
+
+      - name: Terraform init (no backend) and validate
+        run: |
+          terraform -chdir=infra init -backend=false -input=false
+          terraform -chdir=infra validate
+
+      - name: Checkov (Terraform)
+        uses: bridgecrewio/checkov-action@45edc9d8856b664db2ec251f5f8632361f0a67aa # v12.3139.0
+        with:
+          directory: infra
+          framework: terraform
+          quiet: true
+
+      - name: Set up OPA
+        uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
+        with:
+          version: 1.10.1
+
+      - name: OPA policy unit tests
+        run: opa test infra/ -v
+
+      - name: Install Conftest (checksum verified)
+        shell: bash
+        env:
+          CONFTEST_VERSION: 0.62.0
+          CONFTEST_SHA256: 284231908e4cf66d156e5577c3eee2f67d9f2edf2521fa2309e0df1969f871e5
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
+            --output "${RUNNER_TEMP}/conftest.tar.gz"
+          echo "${CONFTEST_SHA256}  ${RUNNER_TEMP}/conftest.tar.gz" | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/conftest-bin"
+          tar -xzf "${RUNNER_TEMP}/conftest.tar.gz" -C "${RUNNER_TEMP}/conftest-bin" conftest
+          echo "${RUNNER_TEMP}/conftest-bin" >> "$GITHUB_PATH"
+
+      - name: Conftest policy unit tests
+        run: conftest verify --policy policy/compose
+
+      - name: Conftest - docker-compose.yml
+        run: conftest test --policy policy/compose --namespace compose docker-compose.yml
+
+  plan:
+    name: Terraform plan + OPA evaluation
+    needs: static
+    # Cloud credentials only on main (midterm T1); PR jobs receive none.
+    # Skipped until the AWS_PLAN_ROLE_ARN repository variable exists.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_PLAN_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~1.13"
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials via OIDC (read-only plan role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Terraform plan
+        run: |
+          terraform -chdir=infra init -input=false
+          terraform -chdir=infra plan -input=false -lock=false -out=tfplan
+          terraform -chdir=infra show -json tfplan > tfplan.json
+
+      - name: Set up OPA
+        uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
+        with:
+          version: 1.10.1
+
+      - name: Evaluate plan against custom policy
+        run: |
+          opa eval --format pretty -d infra/policy.rego -i tfplan.json 'data.terraform.s3.deny'
+          opa eval --fail-defined -d infra/policy.rego -i tfplan.json 'data.terraform.s3.deny[x]' > /dev/null

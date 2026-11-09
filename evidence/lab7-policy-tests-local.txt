@@ -1,0 +1,26 @@
+$ conftest test --policy policy/compose --namespace compose upstream-docker-compose.yml
+FAIL - upstream-docker-compose.yml - compose - app service web must drop ALL capabilities
+FAIL - upstream-docker-compose.yml - compose - app service web must run as a numeric non-root user
+FAIL - upstream-docker-compose.yml - compose - app service web must set no-new-privileges:true
+FAIL - upstream-docker-compose.yml - compose - app service web must set read_only: true
+FAIL - upstream-docker-compose.yml - compose - service web publishes 4000:4000 on a public interface; bind to 127.0.0.1
+
+9 tests, 4 passed, 0 warnings, 5 failures, 0 exceptions
+
+$ conftest test --policy policy/compose --namespace compose docker-compose.yml
+
+9 tests, 9 passed, 0 warnings, 0 failures, 0 exceptions
+
+$ opa test infra/ -v
+infra/policy_test.rego:
+data.terraform.s3_test.test_default_tag_allowed: PASS (2.217013ms)
+data.terraform.s3_test.test_direct_tag_allowed: PASS (2.283187ms)
+data.terraform.s3_test.test_missing_tag_denied: PASS (555.733µs)
+data.terraform.s3_test.test_blank_tag_denied_on_update: PASS (605.494µs)
+data.terraform.s3_test.test_delete_ignored: PASS (237.547µs)
+--------------------------------------------------------------------------------
+PASS: 5/5
+
+$ conftest verify --policy policy/compose
+
+6 tests, 6 passed, 0 warnings, 0 failures, 0 exceptions, 0 skipped
