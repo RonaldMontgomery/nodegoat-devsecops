@@ -6,24 +6,26 @@ Repository: https://github.com/RonaldMontgomery/nodegoat-devsecops (solo project
 
 ## Status note
 
-NodeGoat now runs every control from Labs 2–8 and the Lab 10 signing work. Working: Gitleaks hook and CI scan, with upstream's private key and ZAP key purged from history; SHA-pinned actions with an enforcement check; CI build, lint, unit tests and a smoke test against seeded MongoDB; Terraform with Checkov and OPA; Conftest rules for Compose and Kubernetes; Restricted Pod Security and Kyverno manifests. The Semgrep, Trivy SCA and image gates run and correctly block. NodeGoat's 2016-era dependencies carry Critical CVEs and Semgrep flags its intentional flaws, so GHCR publishing, Cosign signing and provenance verification are wired but skipped until the gates pass. My custom taint rule found the eval() injection in contributions.js, and I fixed it.
+NodeGoat now runs every control from Labs 2–8 and the Lab 10 signing work. Passing on main: Gitleaks hook and CI scan, with upstream's private key and ZAP key purged from history; SHA-pinned actions with an enforcement check; CI build, lint, 5 unit tests and a smoke test against seeded MongoDB that confirms anonymous users are redirected to /login; Terraform with Checkov, OPA and Conftest for Compose and Kubernetes, including a known-bad manifest that must be rejected. Three gates run and correctly block: Semgrep (20 findings, mostly session-cookie settings, missing CSRF and an open redirect), Trivy SCA (33 Critical CVEs) and the image scan (10 Critical). So GHCR publishing, Cosign signing and provenance verification are wired but skipped. My custom taint rule found the eval() injection in contributions.js, and I fixed it.
 
-In progress: triaging Semgrep findings, upgrading dependencies, EC2 deployment with Secrets Manager, and ZAP.
+In progress: fixing Semgrep findings, upgrading dependencies, EC2 deployment with Secrets Manager, and ZAP.
 
-Unsure: upgrading the mongodb 2.x driver means rewriting every DAO, and it is what keeps MongoDB on end-of-life 4.4. Should I prioritize that, or replacing marked/swig first?
+Unsure: Dependabot's mongodb 2.x→7 upgrade means rewriting every DAO, and the old driver keeps MongoDB on end-of-life 4.4. Should that come before replacing marked/swig?
 
-## Gate status
+## Gate status (main @ ea0b833, first full run November 8, 2026)
 
-| Workflow | Expected result now | Why |
+| Workflow | Result | Detail |
 |---|---|---|
-| Secret Scan | Pass | Full-history Gitleaks scan is clean after the pre-publication purge |
-| Action Pinning | Pass | All `uses:` references are full SHAs |
-| CI | Pass | Lint, 5 unit tests, smoke test |
-| IaC Policy (static) | Pass | Policy and unit tests pass locally; Terraform and Checkov run in CI |
-| IaC Policy (plan) | Skipped | Waiting for the `AWS_PLAN_ROLE_ARN` variable and a trust-policy update for this repo |
-| SAST | **Fail (intended)** | Default ruleset flags NodeGoat's remaining OWASP Top 10 flaws |
-| SCA | **Fail (intended)** | Critical CVEs in 2016-era dependencies |
-| Container Security | **Fail (intended)**; publish/sign/verify skipped | Same dependencies ship in the image |
+| Secret Scan | ✅ Pass | Full-history Gitleaks scan clean |
+| Action Pinning | ✅ Pass | All `uses:` references are full SHAs |
+| CI | ✅ Pass | jshint, 5/5 unit tests; smoke test: `/login` 200, anonymous `/dashboard`, `/profile`, `/contributions`, `/memos` redirect to `/login`, secret absent from app log |
+| IaC Policy (static) | ✅ Pass | fmt, validate, Checkov, 5 OPA tests, 12 Conftest tests, compose and k8s manifests pass, `deployment-invalid.yaml` rejected |
+| IaC Policy (plan), AWS OIDC | Skipped | Waiting for `AWS_PLAN_ROLE_ARN`/`AWS_ROLE_ARN` and trust-policy entries for this repo |
+| SAST | ❌ Blocks (intended) | 20 findings: 7 session-cookie settings + missing csurf + plain-HTTP server in `server.js`; open redirect (`/learn`) in `app/routes/index.js`; 3 forms without CSRF tokens; bcrypt hash in seed data; 2 plaintext links in tutorial pages. `semgrep --test` on custom rules passes; `eval-of-request-input` no longer fires after the fix |
+| SCA | ❌ Blocks (intended) | 33 Critical CVEs in `package-lock.json` (e.g. bson, lodash, handlebars, minimist, underscore, tar, form-data) |
+| Container Security | ❌ Blocks (intended) | Docker build and Hadolint pass; Trivy: 9 Critical in Node packages, 1 Critical in Debian 12; publish/sign/verify skipped |
+
+Dependabot opened PRs on the first push, including `mongodb` 2.x → 7.8.0. That PR is the driver rewrite described in the note above. It is expected to fail the smoke test until the DAO code is ported. (Its first run stopped earlier, at lint, because it branched before the jshint fix.)
 
 ## Divergence from the midterm checkpoint architecture
 
