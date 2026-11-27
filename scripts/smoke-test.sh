@@ -209,6 +209,22 @@ out="$(req --data "userName=user1&password=User1_123" "${BASE}/login")"
 [ "${out%% *}" = "403" ] || fail "A8: POST /login without a CSRF token returned ${out}, expected 403 (login CSRF)"
 echo "ok - A8 POST /login without a token is refused (403): login CSRF"
 
+# --- A10 open redirect: /learn ---------------------------------------------
+# /learn used to redirect to any ?url=, so a link on the trusted host could send a
+# logged-in user to a phishing page. It must only ever go to the learning resource.
+LEARN_URL="https://www.khanacademy.org/economics-finance-domain/core-finance/investment-vehicles-tutorial/ira-401ks/v/traditional-iras"
+login user1 User1_123 /dashboard
+for target in "https://evil.example/phish" "//evil.example/phish" "/\\evil.example/phish"; do
+  out="$(req -G --data-urlencode "url=${target}" "${BASE}/learn")"
+  location="${out#* }"
+  if [[ "$location" == *"evil.example"* ]]; then
+    fail "A10: GET /learn?url=${target} redirected to ${location}"
+  fi
+  [ "${out%% *}" = "302" ] && [ "$location" = "$LEARN_URL" ] \
+    || fail "A10: GET /learn?url=${target} returned ${out}, expected 302 to the learning resource"
+  echo "ok - A10 /learn ignores url=${target} and redirects only to the learning resource"
+done
+
 # Driver errors must not be hiding in the log behind a 200 response.
 if grep -qE "TypeError|MongoServerError|MongoError|UnhandledPromiseRejection" "$TMP/nodegoat.log"; then
   fail "driver or runtime error in application log"
