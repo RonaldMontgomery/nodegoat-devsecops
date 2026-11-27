@@ -8,6 +8,6 @@ You can also open an issue, sending a PR, or get in touch on [Gitter Chat](https
 
 If sending PR, once code is ready to commit, run:
 ```
-npm run precommit
+npm run lint
 ```
 This command uses `js-beautifier` to indent the code and verifies these [coding standards](https://github.com/OWASP/NodeGoat/blob/master/.jshintrc) using `jsHint`. Please resolve all `jsHint` errors before committing the code.
