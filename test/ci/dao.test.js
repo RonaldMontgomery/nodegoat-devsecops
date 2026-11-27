@@ -48,11 +48,42 @@ test("UserDAO.getNextSequence reports a missing counter instead of crashing", as
 });
 
 test("UserDAO.validateLogin accepts the right password and flags wrong ones", async () => {
+    // The account is created through addUser so the test does not depend on how
+    // passwords are stored.
     const users = new UserDAO(seededDb());
-    const user = await call(users.validateLogin, "user1", "User1_123");
-    assert.strictEqual(user._id, 2);
-    await assert.rejects(call(users.validateLogin, "user1", "wrong"), err => err.invalidPassword === true);
+    const created = await call(users.addUser, "user9", "Grace", "Hopper", "Grace_123", "");
+    const user = await call(users.validateLogin, "user9", "Grace_123");
+    assert.strictEqual(user._id, created._id);
+    await assert.rejects(call(users.validateLogin, "user9", "wrong"), err => err.invalidPassword === true);
     await assert.rejects(call(users.validateLogin, "nobody", "x"), err => err.noSuchUser === true);
+});
+
+// A2 Broken Authentication: passwords used to be stored and compared in plaintext,
+// so anyone who could read the users collection (or a backup) had every password.
+test("A2: addUser never stores the plaintext password", async () => {
+    const db = seededDb();
+    const users = new UserDAO(db);
+    await call(users.addUser, "user9", "Grace", "Hopper", "Grace_123", "");
+    const stored = db.collection("users").docs.find(u => u.userName === "user9").password;
+    assert.notStrictEqual(stored, "Grace_123", "password stored in plaintext");
+    assert.ok(!String(stored).includes("Grace_123"), "plaintext password is part of the stored value");
+    assert.match(String(stored), /^scrypt\$/, `stored value is not a scrypt hash: ${stored}`);
+});
+
+test("A2: the same password gets a different salt for each user", async () => {
+    const db = seededDb();
+    const users = new UserDAO(db);
+    await call(users.addUser, "user8", "Ada", "Lovelace", "Same_Pass1", "");
+    await call(users.addUser, "user9", "Grace", "Hopper", "Same_Pass1", "");
+    const [a, b] = ["user8", "user9"].map(n => db.collection("users").docs.find(u => u.userName === n).password);
+    assert.notStrictEqual(a, b);
+});
+
+test("A2: a plaintext password left in the database does not log in", async () => {
+    // seededDb() stores "User1_123" in plaintext, as upstream NodeGoat did. There must be
+    // no fallback that compares plaintext; such accounts need their password reset.
+    const users = new UserDAO(seededDb());
+    await assert.rejects(call(users.validateLogin, "user1", "User1_123"), err => err.invalidPassword === true);
 });
 
 test("UserDAO lookups by id and by user name", async () => {

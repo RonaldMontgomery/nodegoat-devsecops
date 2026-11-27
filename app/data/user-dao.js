@@ -1,5 +1,6 @@
-const bcrypt = require("bcrypt-nodejs");
+const crypto = require("crypto");
 const { toCallback } = require("./mongo");
+const { hashPassword, verifyPassword } = require("../password");
 
 /* The UserDAO must be constructed with a connected database object */
 function UserDAO(db) {
@@ -39,13 +40,7 @@ function UserDAO(db) {
             userName,
             firstName,
             lastName,
-            benefitStartDate: this.getRandomFutureDate(),
-            password //received from request param
-            /*
-            // Fix for A2-1 - Broken Auth
-            // Stores password  in a safer way using one way encryption and salt hashing
-            password: bcrypt.hashSync(password, bcrypt.genSaltSync())
-            */
+            benefitStartDate: this.getRandomFutureDate()
         };
 
         // Add email if set
@@ -55,9 +50,11 @@ function UserDAO(db) {
 
         // Driver 4.0 removed insert() and result.ops; insertOne() returns only insertedId,
         // so return the document we built (its _id comes from the counter).
-        const inserted = nextSequence("userId").then(id => {
+        // Fix for A2 - Broken Authentication: store a salted scrypt hash, never the
+        // password itself (app/password.js). The hash is not returned to the caller.
+        const inserted = Promise.all([nextSequence("userId"), hashPassword(password)]).then(([id, hash]) => {
             user._id = id;
-            return usersCol.insertOne(user);
+            return usersCol.insertOne({ ...user, password: hash });
         }).then(() => user);
 
         toCallback(inserted, callback);
@@ -71,43 +68,40 @@ function UserDAO(db) {
         return `${year}-${("0" + month).slice(-2)}-${("0" + day).slice(-2)}`;
     };
 
+    // A hash of a random value, compared against when the user name does not exist, so a
+    // failed login takes about as long either way (no user enumeration by timing).
+    let dummyHash;
+    const getDummyHash = () => {
+        dummyHash = dummyHash || hashPassword(crypto.randomBytes(16).toString("hex"));
+        return dummyHash;
+    };
+
+    const loginError = (message, flag) => {
+        const err = new Error(message);
+        // Set an extra field so routes can tell this apart from a database error
+        err[flag] = true;
+        return err;
+    };
+
     this.validateLogin = (userName, password, callback) => {
+        // Fix for A2 - Broken Authentication: compare against the stored scrypt hash in
+        // constant time. There is deliberately no plaintext fallback.
+        // A JSON body could send {"userName": {"$ne": null}}; only strings are looked up.
+        const lookup = typeof userName === "string" ? usersCol.findOne({ userName }) : Promise.resolve(null);
 
-        // Helper function to compare passwords
-        const comparePassword = (fromDB, fromUser) => {
-            return fromDB === fromUser;
-            /*
-            // Fix for A2-Broken Auth
-            // compares decrypted password stored in this.addUser()
-            return bcrypt.compareSync(fromDB, fromUser);
-            */
-        };
-
-        // Callback to pass to MongoDB that validates a user document
-        const validateUserDoc = (err, user) => {
-
-            if (err) return callback(err, null);
-
-            if (user) {
-                if (comparePassword(password, user.password)) {
-                    callback(null, user);
-                } else {
-                    const invalidPasswordError = new Error("Invalid password");
-                    // Set an extra field so we can distinguish this from a db error
-                    invalidPasswordError.invalidPassword = true;
-                    callback(invalidPasswordError, null);
-                }
-            } else {
-                const noSuchUserError = new Error("User: " + user + " does not exist");
-                // Set an extra field so we can distinguish this from a db error
-                noSuchUserError.noSuchUser = true;
-                callback(noSuchUserError, null);
+        const checked = lookup.then(user => {
+            if (!user) {
+                return getDummyHash()
+                    .then(hash => verifyPassword(password, hash))
+                    .then(() => { throw loginError("No such user", "noSuchUser"); });
             }
-        };
+            return verifyPassword(password, user.password).then(ok => {
+                if (!ok) throw loginError("Invalid password", "invalidPassword");
+                return user;
+            });
+        });
 
-        toCallback(usersCol.findOne({
-            userName: userName
-        }), validateUserDoc);
+        toCallback(checked, callback);
     };
 
     // This is the good one, see the next function

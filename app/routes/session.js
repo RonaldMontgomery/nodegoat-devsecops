@@ -25,7 +25,13 @@ function SessionHandler(db) {
     this.isAdminUserMiddleware = (req, res, next) => {
         if (req.session.userId) {
             return userDAO.getUserById(req.session.userId, (err, user) => {
-               return user && user.isAdmin ? next() : res.redirect("/login");
+                if (err) return next(err);
+                if (user && user.isAdmin) return next();
+                // Fix for A7: a logged-in user without the admin role is refused, not sent
+                // back to the login page as if the session had expired.
+                return res.status(403).render("error-template", {
+                    error: "This page is for administrators only."
+                });
             });
         }
         console.log("redirecting to login");
@@ -56,65 +62,33 @@ function SessionHandler(db) {
             password
         } = req.body;
         userDAO.validateLogin(userName, password, (err, user) => {
+            // Fix for A2-2 Broken Auth: one message for an unknown user name and a wrong
+            // password, so the login form cannot be used to find valid user names.
             const errorMessage = "Invalid username and/or password";
-            const invalidUserNameErrorMessage = "Invalid username";
-            const invalidPasswordErrorMessage = "Invalid password";
             if (err) {
-                if (err.noSuchUser) {
-                    console.log("Error: attempt to login with invalid user: ", userName);
-
-                    // Fix for A1 - 3 Log Injection - encode/sanitize input for CRLF Injection
-                    // that could result in log forging:
-                    // - Step 1: Require a module that supports encoding
-                    // const ESAPI = require('node-esapi');
-                    // - Step 2: Encode the user input that will be logged in the correct context
-                    // following are a few examples:
-                    // console.log('Error: attempt to login with invalid user: %s',
-                    //     ESAPI.encoder().encodeForHTML(userName));
-                    // console.log('Error: attempt to login with invalid user: %s',
-                    //     ESAPI.encoder().encodeForJavaScript(userName));
-                    // console.log('Error: attempt to login with invalid user: %s',
-                    //     ESAPI.encoder().encodeForURL(userName));
-                    // or if you know that this is a CRLF vulnerability you can target this specifically as follows:
-                    // console.log('Error: attempt to login with invalid user: %s',
-                    //     userName.replace(/(\r\n|\r|\n)/g, '_'));
+                if (err.noSuchUser || err.invalidPassword) {
+                    // Fix for A1-3 Log Injection: strip CR/LF and other control characters
+                    // so a crafted user name cannot forge extra log lines.
+                    const safeUserName = String(userName).replace(/[\u0000-\u001f\u007f]/g, "_").slice(0, 100);
+                    console.log(`Failed login for user name: ${safeUserName}`);
 
                     return res.render("login", {
-                        userName: userName,
+                        userName: typeof userName === "string" ? userName : "",
                         password: "",
-                        loginError: invalidUserNameErrorMessage,
-                        //Fix for A2-2 Broken Auth - Uses identical error for both username, password error
-                        // loginError: errorMessage
+                        loginError: errorMessage,
                         environmentalScripts
                     });
-                } else if (err.invalidPassword) {
-                    return res.render("login", {
-                        userName: userName,
-                        password: "",
-                        loginError: invalidPasswordErrorMessage,
-                        //Fix for A2-2 Broken Auth - Uses identical error for both username, password error
-                        // loginError: errorMessage
-                        environmentalScripts
-                    });
-                } else {
-                    return next(err);
                 }
+                return next(err);
             }
 
-            // A2-Broken Authentication and Session Management
-            // Upon login, a security best practice with regards to cookies session management
-            // would be to regenerate the session id so that if an id was already created for
-            // a user on an insecure medium (i.e: non-HTTPS website or otherwise), or if an
-            // attacker was able to get their hands on the cookie id before the user logged-in,
-            // then the old session id will render useless as the logged-in user with new privileges
-            // holds a new session id now.
-
-            // Fix the problem by regenerating a session in each login
-            // by wrapping the below code as a function callback for the method req.session.regenerate()
-            // i.e:
-            // `req.session.regenerate(() => {})`
-            req.session.userId = user._id;
-            return res.redirect(user.isAdmin ? "/benefits" : "/dashboard");
+            // Fix for A2 - session fixation: issue a new session id at login, so an id an
+            // attacker planted or saw before login is worthless afterwards.
+            req.session.regenerate(regenerateErr => {
+                if (regenerateErr) return next(regenerateErr);
+                req.session.userId = user._id;
+                return res.redirect(user.isAdmin ? "/benefits" : "/dashboard");
+            });
         });
     };
 
