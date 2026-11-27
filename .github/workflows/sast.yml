@@ -20,7 +20,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Test custom rules (positive and negative cases)
-        run: semgrep --test .semgrep/
+        run: |
+          status=0
+          semgrep --test .semgrep/ > semgrep-test.log 2>&1 || status=$?
+          cat semgrep-test.log
+          # A test run that finds no tests must not pass as green.
+          if grep -q "No unit tests found" semgrep-test.log; then
+            echo "::error::semgrep --test found no tests; the custom rules were not tested"
+            exit 1
+          fi
+          exit "$status"
 
       # Documented false positives (excluded by rule id, not by file):
       # - express-cookie-session-no-expires: the session cookie expires through maxAge.
