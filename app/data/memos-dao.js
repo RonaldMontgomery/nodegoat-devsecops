@@ -1,3 +1,5 @@
+const { toCallback } = require("./mongo");
+
 /* The MemosDAO must be constructed with a connected database object */
 function MemosDAO(db) {
 
@@ -20,14 +22,14 @@ function MemosDAO(db) {
             timestamp: new Date()
         };
 
-        memosCol.insert(memos, (err, result) => !err ? callback(null, result) : callback(err, null));
+        toCallback(memosCol.insertOne(memos), callback);
     };
 
     this.getAllMemos = (callback) => {
 
-        memosCol.find({}).sort({
+        toCallback(memosCol.find({}).sort({
             timestamp: -1
-        }).toArray((err, memos) => {
+        }).toArray(), (err, memos) => {
             if (err) return callback(err, null);
             if (!memos) return callback("ERROR: No memos found", null);
             callback(null, memos);

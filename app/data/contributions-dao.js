@@ -1,4 +1,5 @@
 const UserDAO = require("./user-dao").UserDAO;
+const { toCallback } = require("./mongo");
 
 /* The ContributionsDAO must be constructed with a connected database object */
 function ContributionsDAO(db) {
@@ -25,12 +26,13 @@ function ContributionsDAO(db) {
             roth: roth
         };
 
-        contributionsDB.update({
+        // Driver 4.0 removed update(); a whole-document upsert is now replaceOne().
+        toCallback(contributionsDB.replaceOne({
             userId
             },
             contributions, {
                 upsert: true
-            },
+            }),
             err => {
                 if (!err) {
                     console.log("Updated contributions");
@@ -54,9 +56,9 @@ function ContributionsDAO(db) {
     };
 
     this.getByUserId = (userId, callback) => {
-        contributionsDB.findOne({
+        toCallback(contributionsDB.findOne({
                 userId: userId
-            },
+            }),
             (err, contributions) => {
                 if (err) return callback(err, null);
 

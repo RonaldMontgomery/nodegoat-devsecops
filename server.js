@@ -8,7 +8,7 @@ const session = require("express-session");
 const consolidate = require("consolidate"); // Templating library adapter for Express
 const swig = require("swig");
 // const helmet = require("helmet");
-const MongoClient = require("mongodb").MongoClient; // Driver for connecting to MongoDB
+const { connect } = require("./app/data/mongo"); // MongoDB driver 7.x connection helper
 const http = require("http");
 const marked = require("marked");
 //const nosniff = require('dont-sniff-mimetype');
@@ -27,7 +27,7 @@ const httpsOptions = {
 };
 */
 
-MongoClient.connect(db, (err, db) => {
+connect(db, (err, db) => {
     if (err) {
         console.log("Error: DB: connect");
         console.log(err);

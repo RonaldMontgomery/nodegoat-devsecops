@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt-nodejs");
+const { toCallback } = require("./mongo");
 
 /* The UserDAO must be constructed with a connected database object */
 function UserDAO(db) {
@@ -13,6 +14,23 @@ function UserDAO(db) {
     }
 
     const usersCol = db.collection("users");
+
+    // Driver 4.0 removed findAndModify(); driver 6.0 made findOneAndUpdate() resolve
+    // to the document itself rather than { value: doc }.
+    const nextSequence = name => db.collection("counters").findOneAndUpdate({
+        _id: name
+    }, {
+        $inc: {
+            seq: 1
+        }
+    }, {
+        returnDocument: "after"
+    }).then(counter => {
+        if (!counter) {
+            throw new Error(`Counter "${name}" not found; run artifacts/db-reset.js`);
+        }
+        return counter.seq;
+    });
 
     this.addUser = (userName, firstName, lastName, password, email, callback) => {
 
@@ -35,15 +53,14 @@ function UserDAO(db) {
             user.email = email;
         }
 
-        this.getNextSequence("userId", (err, id) => {
-            if (err) {
-                return callback(err, null);
-            }
-            console.log(typeof(id));
-
+        // Driver 4.0 removed insert() and result.ops; insertOne() returns only insertedId,
+        // so return the document we built (its _id comes from the counter).
+        const inserted = nextSequence("userId").then(id => {
             user._id = id;
-            usersCol.insert(user, (err, result) => !err ? callback(null, result.ops[0]) : callback(err, null));
-        });
+            return usersCol.insertOne(user);
+        }).then(() => user);
+
+        toCallback(inserted, callback);
     };
 
     this.getRandomFutureDate = () => {
@@ -88,35 +105,26 @@ function UserDAO(db) {
             }
         };
 
-        usersCol.findOne({
+        toCallback(usersCol.findOne({
             userName: userName
-        }, validateUserDoc);
+        }), validateUserDoc);
     };
 
     // This is the good one, see the next function
     this.getUserById = (userId, callback) => {
-        usersCol.findOne({
+        toCallback(usersCol.findOne({
             _id: parseInt(userId)
-        }, callback);
+        }), callback);
     };
 
     this.getUserByUserName = (userName, callback) => {
-        usersCol.findOne({
+        toCallback(usersCol.findOne({
             userName: userName
-        }, callback);
+        }), callback);
     };
 
     this.getNextSequence = (name, callback) => {
-        db.collection("counters").findAndModify({
-                _id: name
-            }, [], {
-                $inc: {
-                    seq: 1
-                }
-            }, {
-                new: true
-            },
-            (err, data) =>  err ? callback(err, null) : callback(null, data.value.seq));
+        toCallback(nextSequence(name), callback);
     };
 }
 

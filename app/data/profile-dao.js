@@ -1,3 +1,5 @@
+const { toCallback } = require("./mongo");
+
 /* The ProfileDAO must be constructed with a connected database object */
 function ProfileDAO(db) {
 
@@ -75,11 +77,11 @@ function ProfileDAO(db) {
         }
         */
 
-        users.update({
+        toCallback(users.updateOne({
                 _id: parseInt(userId)
             }, {
                 $set: user
-            },
+            }),
             err => {
                 if (!err) {
                     console.log("Updated user profile");
@@ -92,9 +94,9 @@ function ProfileDAO(db) {
     };
 
     this.getByUserId = (userId, callback) => {
-        users.findOne({
+        toCallback(users.findOne({
                 _id: parseInt(userId)
-            },
+            }),
             (err, user) => {
                 if (err) return callback(err, null);
                 /*
