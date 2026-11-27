@@ -23,8 +23,8 @@ Current status of that standard:
 
 | | |
 |---|---|
-| **Scope** | The `mongo:8.0` image used by CI service containers, Docker Compose and `k8s/mongo.yaml`. Only this image; nothing this repository builds, signs or deploys. |
-| **Scan** | `trivy image --scanners vuln --exit-code 0 mongo:8.0` on every run of `container-security.yml`; results are in the job log. |
+| **Scope** | The `mongo:8.0` image, pinned by digest (`sha256:479e85ce…`), used by CI service containers, Docker Compose and `k8s/mongo.yaml`. Only this image; nothing this repository builds, signs or deploys. |
+| **Scan** | `trivy image --scanners vuln --exit-code 0 mongo:8.0@sha256:…` (the same pinned digest) on every run of `container-security.yml`; results are in the job log. |
 | **Findings when raised (2026-11-27)** | Ubuntu 24.04 OS: 144 (137 MEDIUM, 7 LOW), most with no Ubuntu fix. Each of the 8 bundled Go tools (`bsondump`, `mongodump`, …): 4 (1 HIGH). `gosu`: 62 (1 CRITICAL, 25 HIGH). A bundled `js-yaml`: 5 (3 HIGH). |
 | **Why it cannot meet the standard** | We do not build this image. Its OS packages have no available fix, and its bundled tools are compiled by MongoDB with older Go toolchains. Free hardened MongoDB images require a registry login, which would put a credential into pull-request jobs (against the "no secrets in PR jobs" rule, threat T1/T4). |
 | **What was done instead** | Upgraded from end-of-life `mongo:4.4` (which had 99 findings per bundled tool, 1 CRITICAL each) to supported `mongo:8.0`; made possible by porting the app to MongoDB driver 7.8. |

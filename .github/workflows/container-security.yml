@@ -16,7 +16,7 @@ jobs:
     # Disposable MongoDB so the built image can be started and tested, not only scanned.
     services:
       mongo:
-        image: mongo:8.0
+        image: mongo:8.0@sha256:479e85ced54ffb8a40dade1dcde2da2a9ae858515b9415e9cc54bfb8f0575d01
         ports:
           - 127.0.0.1:27017:27017
 
@@ -118,7 +118,7 @@ jobs:
       # does not cover anything this repository builds, signs or deploys.
       - name: Report MongoDB image vulnerabilities (exception EX-01, non-blocking)
         run: |
-          trivy image --scanners vuln --exit-code 0 mongo:8.0
+          trivy image --scanners vuln --exit-code 0 mongo:8.0@sha256:479e85ced54ffb8a40dade1dcde2da2a9ae858515b9415e9cc54bfb8f0575d01
 
   # Each scanner is its own workflow, so "needs:" cannot see them. Before anything is
   # published or signed, wait for the other required checks on this same commit and
