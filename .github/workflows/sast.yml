@@ -32,13 +32,17 @@ jobs:
       # Domain, plus HttpOnly, Secure, SameSite=Strict, Path=/) on every CI run.
       # - django-no-csrf-token: a Django rule applied to every *.html file. It looks for
       #   Django's {% csrf_token %} tag, which does not exist in Swig. NodeGoat's forms
-      #   carry csurf's token as a hidden _csrf field (the rule flagged login.html even
+      #   carry the CSRF token as a hidden _csrf field (the rule flagged login.html even
       #   though it had one). scripts/smoke-test.sh proves the real control: forged POSTs
       #   without a token or with a wrong one get 403 and change nothing.
+      # - express-check-csurf-middleware-usage: only recognises the csurf and csrf packages.
+      #   CSRF protection is csrf-sync (app/csrf.js), which replaced the archived csurf.
+      #   test/ci/csrf.test.js and the smoke test's forged-request checks prove it.
       - name: Run Semgrep
         run: >-
           semgrep --config auto --config .semgrep/custom-rules.yml --error
           --exclude-rule javascript.express.security.audit.express-cookie-settings.express-cookie-session-no-expires
           --exclude-rule javascript.express.security.audit.express-cookie-settings.express-cookie-session-no-domain
           --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token
+          --exclude-rule javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage
           .

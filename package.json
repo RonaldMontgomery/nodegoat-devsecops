@@ -6,7 +6,6 @@
   "main": "server.js",
   "dependencies": {
     "body-parser": "^1.15.1",
-    "csurf": "^1.8.3",
     "express": "^4.21.2",
     "express-session": "^1.19.0",
     "helmet": "^8.3.0",
@@ -37,10 +36,5 @@
     "eslint": "^10.15.0"
   },
   "repository": "https://github.com/OWASP/NodejsGoat",
-  "license": "Apache 2.0",
-  "overrides": {
-    "csurf": {
-      "cookie": "0.7.2"
-    }
-  }
+  "license": "Apache 2.0"
 }

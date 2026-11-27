@@ -1,11 +1,12 @@
 // Error handling middleware
+const { isCsrfError } = require("../csrf");
 
 const errorHandler = (err, req, res,next) => {
 
     "use strict";
 
     // Fix for A8 - CSRF: a missing or forged token is a refused request, not a server error.
-    if (err.code === "EBADCSRFTOKEN") {
+    if (isCsrfError(err)) {
         console.error(`CSRF token rejected: ${req.method} ${req.path}`);
         res.status(403);
         return res.render("error-template", {

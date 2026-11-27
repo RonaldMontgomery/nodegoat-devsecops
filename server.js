@@ -4,7 +4,7 @@ const express = require("express");
 const favicon = require("serve-favicon");
 const bodyParser = require("body-parser");
 const session = require("express-session");
-const csrf = require("csurf");
+const { csrfProtection, exposeToken } = require("./app/csrf");
 const nunjucks = require("nunjucks"); // Template engine (replaces abandoned swig)
 const helmet = require("helmet");
 const { connect } = require("./app/data/mongo"); // MongoDB driver 7.x connection helper
@@ -102,16 +102,13 @@ connect(db, (err, db) => {
         }
     }));
 
-    // Fix for A8 - CSRF. Every POST must carry the session's token in the "_csrf"
-    // form field; the secret lives in the server-side session (not a cookie), so a
-    // forged cross-site request cannot read or set it. Bad or missing tokens get 403
-    // (app/routes/error.js). SameSite=Strict on the session cookie is a second layer.
-    app.use(csrf());
-    // Make csrf token available in templates as {{csrftoken}}
-    app.use((req, res, next) => {
-        res.locals.csrftoken = req.csrfToken();
-        next();
-    });
+    // Fix for A8 - CSRF. Every POST must carry the session's token in the "_csrf" form
+    // field (app/csrf.js, csrf-sync; replaces the archived csurf). The token lives in the
+    // server-side session, so a forged cross-site request cannot read or set it. Bad or
+    // missing tokens get 403 (app/routes/error.js). SameSite=Strict is a second layer.
+    app.use(csrfProtection);
+    // Make the token available in templates as {{csrftoken}}
+    app.use(exposeToken);
 
     // Register templating engine.
     // Fix for A3 - XSS and A9: swig 1.4.2 is abandoned with an unfixable file-read CVE
