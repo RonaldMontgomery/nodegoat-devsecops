@@ -17,15 +17,6 @@ data "aws_ssm_parameter" "ubuntu_ami" {
   name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
 }
 
-data "aws_vpc" "default" {
-  default = true
-}
-
-data "aws_subnet" "app" {
-  vpc_id            = data.aws_vpc.default.id
-  availability_zone = "${var.aws_region}a"
-  default_for_az    = true
-}
 
 locals {
   secret_arn_prefix = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:nodegoat/"
@@ -33,10 +24,57 @@ locals {
 
 # ---------------------------------------------------------------- network
 
+# A small dedicated VPC (this account has no default VPC in us-east-1): one public
+# subnet with an internet gateway for outbound traffic. VPCs, subnets, route tables
+# and internet gateways have no hourly charge.
+resource "aws_vpc" "app" {
+  #checkov:skip=CKV2_AWS_11:Flow logs need a log destination with its own key policy or a CloudWatch log group; out of scope for a single demo host with no inbound rules.
+  cidr_block           = "10.42.0.0/24"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = {
+    Name = "nodegoat"
+  }
+}
+
+# Take over the VPC's default security group and leave it with no rules.
+resource "aws_default_security_group" "app" {
+  vpc_id = aws_vpc.app.id
+}
+
+resource "aws_internet_gateway" "app" {
+  vpc_id = aws_vpc.app.id
+}
+
+resource "aws_subnet" "app" {
+  vpc_id            = aws_vpc.app.id
+  cidr_block        = "10.42.0.0/26"
+  availability_zone = "${var.aws_region}a"
+
+  tags = {
+    Name = "nodegoat-public"
+  }
+}
+
+resource "aws_route_table" "app" {
+  vpc_id = aws_vpc.app.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.app.id
+  }
+}
+
+resource "aws_route_table_association" "app" {
+  subnet_id      = aws_subnet.app.id
+  route_table_id = aws_route_table.app.id
+}
+
 resource "aws_security_group" "app" {
   name        = "nodegoat-app"
   description = "NodeGoat host: no inbound access; outbound HTTP(S) only"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.app.id
 
   egress {
     description = "HTTPS: GHCR, Sigstore, SSM, Secrets Manager"
@@ -102,7 +140,7 @@ resource "aws_instance" "app" { # nosemgrep: terraform.aws.security.aws-ec2-has-
   #checkov:skip=CKV_AWS_126:Detailed monitoring is a paid add-on; basic monitoring is enough for a demo host.
   ami                         = data.aws_ssm_parameter.ubuntu_ami.value
   instance_type               = var.instance_type
-  subnet_id                   = data.aws_subnet.app.id
+  subnet_id                   = aws_subnet.app.id
   vpc_security_group_ids      = [aws_security_group.app.id]
   iam_instance_profile        = aws_iam_instance_profile.app_host.name
   associate_public_ip_address = true
@@ -130,6 +168,9 @@ resource "aws_instance" "app" { # nosemgrep: terraform.aws.security.aws-ec2-has-
   tags = {
     Name = "nodegoat-app"
   }
+
+  # First boot installs packages, so the route to the internet must exist first.
+  depends_on = [aws_route_table_association.app]
 
   lifecycle {
     # New Ubuntu images are published often; patch in place instead of replacing the host.

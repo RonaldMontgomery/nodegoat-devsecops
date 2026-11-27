@@ -53,6 +53,14 @@ test_ingress_security_group_denied if {
 	count(ec2.deny) == 1 with input as plan("aws_security_group", {"ingress": [{"from_port": 22, "cidr_blocks": ["0.0.0.0/0"]}]})
 }
 
+test_default_security_group_with_ingress_denied if {
+	count(ec2.deny) == 1 with input as plan("aws_default_security_group", {"ingress": [{"from_port": 0, "self": true}]})
+}
+
+test_empty_default_security_group_allowed if {
+	count(ec2.deny) == 0 with input as plan("aws_default_security_group", {"ingress": [], "egress": []})
+}
+
 test_separate_ingress_rule_denied if {
 	count(ec2.deny) == 1 with input as plan("aws_vpc_security_group_ingress_rule", {"from_port": 22})
 }
