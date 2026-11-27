@@ -44,5 +44,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Scan for critical vulnerabilities
-        run: trivy fs --scanners vuln --include-dev-deps --severity CRITICAL --exit-code 1 .
+      # Midterm standard: block every severity, including UNKNOWN and unfixed findings.
+      - name: Scan dependencies for vulnerabilities at every severity
+        run: trivy fs --scanners vuln --include-dev-deps --exit-code 1 .

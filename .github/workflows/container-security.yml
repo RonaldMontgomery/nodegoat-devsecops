@@ -99,34 +99,21 @@ jobs:
 
           echo "${RUNNER_TEMP}/trivy-bin" >> "$GITHUB_PATH"
 
-      # TEMPORARY: readable all-severity reports to size the final gate change.
-      - name: Report all severities (non-blocking, tracking)
-        run: |
-          trivy image --scanners vuln --exit-code 0 nodegoat:${{ github.sha }}
-          for tag in 4.4 8.0; do
-            echo "::group::mongo:${tag} (all severities)"
-            trivy image --scanners vuln --exit-code 0 "mongo:${tag}"
-            echo "::endgroup::"
-          done
-
-      - name: Scan image for Critical vulnerabilities
+      # Midterm standard: block every severity, including UNKNOWN and unfixed findings
+      # (no --severity filter, no --ignore-unfixed).
+      - name: Scan image for vulnerabilities at every severity
         run: |
           trivy image \
             --scanners vuln \
-            --severity CRITICAL \
             --exit-code 1 \
             nodegoat:${{ github.sha }}
 
-      # MongoDB 4.4 is end-of-life. NodeGoat's mongodb 2.x driver cannot talk to a
-      # supported server, so this scan reports but does not block until the driver
-      # upgrade lands (tracked in docs/draft-pipeline-review.md).
+      # The official MongoDB images cannot meet that standard (OS packages plus old Go
+      # toolchains in the bundled tools and gosu), so this reports but does not block
+      # while the replacement is decided. Tracked in the evidence log.
       - name: Report MongoDB image vulnerabilities (non-blocking, tracked)
         run: |
-          trivy image \
-            --scanners vuln \
-            --severity CRITICAL,HIGH \
-            --exit-code 0 \
-            mongo:4.4
+          trivy image --scanners vuln --exit-code 0 mongo:4.4
 
   # Each scanner is its own workflow, so "needs:" cannot see them. Before anything is
   # published or signed, wait for the other required checks on this same commit and
@@ -248,11 +235,10 @@ jobs:
 
           echo "${RUNNER_TEMP}/trivy-bin" >> "$GITHUB_PATH"
 
-      - name: Gate published image on Critical vulnerabilities
+      - name: Gate published image on vulnerabilities at every severity
         run: |
           trivy image \
             --scanners vuln \
-            --severity CRITICAL \
             --exit-code 1 \
             "$IMAGE"
 
