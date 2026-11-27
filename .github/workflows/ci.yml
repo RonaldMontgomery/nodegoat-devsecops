@@ -36,6 +36,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
+        id: install
         run: npm ci
 
       - name: Lint (upstream jshint config)
@@ -44,7 +45,11 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      # Runs even when lint or unit tests fail, so a red run still shows what the
+      # app does against a real MongoDB (e.g. an exploit test written before its fix).
+      # The job stays failed, and the build and package steps after it still skip.
       - name: Smoke test against seeded MongoDB
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: ./scripts/smoke-test.sh
 
       - name: Build
