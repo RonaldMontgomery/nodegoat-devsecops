@@ -29,6 +29,23 @@ flowchart LR
 | Secrets read at deploy time from Secrets Manager, written only to tmpfs (`/run/nodegoat`), gone on reboot | `scripts/deploy-host.sh`; host role can read only `nodegoat/*` |
 | Encrypted root volume; Ubuntu unattended security upgrades (on by default) | `infra/deploy.tf` |
 
+## Negative tests (2026-11-27, against the live host)
+
+| Attempt | Result |
+|---|---|
+| Deploy a well-formed digest that was never published or signed | SSM command `5ea06646-…` **Failed** on the host: `Error: no signatures found`. Nothing was pulled or restarted. |
+| Put shell code in the digest parameter (`sha256:abc;id`) | Rejected by SSM before reaching the host: `InvalidParameters` (the document's `allowedPattern`). |
+| Afterwards | Host still running `…@sha256:02e50dba…` (the signed release); `nodegoat-web-1 Up`, `nodegoat-mongo-1 Up (healthy)`. |
+
+## Changes from the midterm plan
+
+| Plan | Built | Why |
+|---|---|---|
+| Images in Amazon ECR | GitHub Container Registry (public) | Signatures and provenance live next to the image; no AWS registry permissions or pull credentials on the host; no storage cost. The host pulls by digest only. |
+| Host verifies signer, signature, digest **and provenance/source commit** | CI's `verify` job checks the signature and SLSA provenance (commit and workflow) immediately before deploy; the host checks the Cosign signature and signer identity again, and the digest | Provenance check on the host is a possible addition (`cosign verify-attestation`); the deploy role can only pass a digest that `verify` already approved. |
+| Deploy role "publishes to ECR and invokes SSM" | Deploy role only sends one SSM document to one instance; publishing uses `GITHUB_TOKEN` to GHCR | Narrower role. |
+| `$10` budget alert | Budget set to `$10` | — |
+
 ## Secrets (created once in CloudShell; values never leave AWS)
 
 | Secret | Used as |

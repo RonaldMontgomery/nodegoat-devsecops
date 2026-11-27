@@ -30,3 +30,13 @@ updates:
 
     cooldown:
       default-days: 7
+
+  # Keep the pinned MongoDB digest in docker-compose.yml current (CI, k8s and the
+  # Trivy report use the same digest; update them together).
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    cooldown:
+      default-days: 7
