@@ -8,6 +8,7 @@
 
 const { MongoClient } = require("mongodb");
 const { db } = require("../config/config");
+const { hashPassword } = require("../app/password");
 
 const USERS_TO_INSERT = [
     {
@@ -62,10 +63,15 @@ const reset = async () => {
         console.log("countersCol.insertOne");
         console.log(JSON.stringify(counter));
 
-        // insert admin and test users
+        // insert admin and test users. Fix for A2: the published demo passwords above are
+        // stored as salted scrypt hashes, never in plaintext, and are not logged.
+        const usersWithHashes = await Promise.all(USERS_TO_INSERT.map(async (user) => ({
+            ...user,
+            password: await hashPassword(user.password)
+        })));
         console.log("Users to insert:");
-        USERS_TO_INSERT.forEach((user) => console.log(JSON.stringify(user)));
-        const users = await database.collection("users").insertMany(USERS_TO_INSERT);
+        usersWithHashes.forEach(({ password, ...user }) => console.log(JSON.stringify(user)));
+        const users = await database.collection("users").insertMany(usersWithHashes);
         console.log("users.insertMany");
         console.log(JSON.stringify(users));
 
