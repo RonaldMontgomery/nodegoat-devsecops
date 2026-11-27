@@ -4,7 +4,7 @@ const express = require("express");
 const favicon = require("serve-favicon");
 const bodyParser = require("body-parser");
 const session = require("express-session");
-// const csrf = require('csurf');
+const csrf = require("csurf");
 const consolidate = require("consolidate"); // Templating library adapter for Express
 const swig = require("swig");
 // const helmet = require("helmet");
@@ -119,16 +119,16 @@ connect(db, (err, db) => {
         }
     }));
 
-    /*
-    // Fix for A8 - CSRF
-    // Enable Express csrf protection
+    // Fix for A8 - CSRF. Every POST must carry the session's token in the "_csrf"
+    // form field; the secret lives in the server-side session (not a cookie), so a
+    // forged cross-site request cannot read or set it. Bad or missing tokens get 403
+    // (app/routes/error.js). SameSite=Strict on the session cookie is a second layer.
     app.use(csrf());
-    // Make csrf token available in templates
+    // Make csrf token available in templates as {{csrftoken}}
     app.use((req, res, next) => {
         res.locals.csrftoken = req.csrfToken();
         next();
     });
-    */
 
     // Register templating engine
     app.engine(".html", consolidate.swig);
