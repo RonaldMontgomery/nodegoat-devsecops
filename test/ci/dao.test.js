@@ -240,6 +240,18 @@ test("A6: a tampered ciphertext is rejected, not decrypted to something else", a
     assert.strictEqual(user.dob, SENSITIVE.dob, "other fields unaffected");
 });
 
+test("A6: a truncated authentication tag is rejected (no short-tag forgeries)", async () => {
+    const db = seededDb();
+    const profile = new ProfileDAO(db);
+    await saveSensitive(profile, "2");
+    const doc = db.collection("users").docs.find(u => u._id === 2);
+    const parts = doc.ssn.split(":");
+    parts[3] = Buffer.from(parts[3], "base64").subarray(0, 4).toString("base64");
+    doc.ssn = parts.join(":");
+    const user = await call(profile.getByUserId, "2");
+    assert.strictEqual(user.ssn, "", "a 4-byte tag must not be accepted");
+});
+
 test("ProfileDAO updates and reads a profile", async () => {
     const profile = new ProfileDAO(seededDb());
     const updated = await call(profile.updateUser, "2", "Johnny", "", "", "", "1 Main St", "", "");

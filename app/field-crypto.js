@@ -15,6 +15,9 @@ const { cryptoKey } = require("../config/config");
 
 const PREFIX = "enc:v1:";
 const IV_LENGTH = 12; // 96-bit nonce, the recommended size for GCM
+// Full 128-bit tag. Pinning the length on decrypt matters: otherwise Node accepts a
+// truncated tag, and a short tag can be guessed, which allows forged ciphertexts.
+const TAG_LENGTH = 16;
 
 // HKDF turns the secret string into a 256-bit key bound to this one purpose.
 const key = Buffer.from(crypto.hkdfSync("sha256", String(cryptoKey), "nodegoat", "profile-fields:v1", 32));
@@ -23,7 +26,7 @@ const isEncrypted = value => typeof value === "string" && value.startsWith(PREFI
 
 const encryptField = plaintext => {
     const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+    const cipher = crypto.createCipheriv("aes-256-gcm", key, iv, { authTagLength: TAG_LENGTH });
     const ciphertext = Buffer.concat([cipher.update(String(plaintext), "utf8"), cipher.final()]);
     const tag = cipher.getAuthTag();
     return PREFIX + [iv, tag, ciphertext].map(part => part.toString("base64")).join(":");
@@ -31,8 +34,9 @@ const encryptField = plaintext => {
 
 // Throws if the value was modified or encrypted with another key.
 const decryptField = stored => {
-    const [iv, tag, ciphertext] = stored.slice(PREFIX.length).split(":").map(part => Buffer.from(part, "base64"));
-    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    const [iv, tag, ciphertext] = stored.slice(PREFIX.length).split(":").map(part => Buffer.from(part || "", "base64"));
+    if (iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH) throw new Error("Malformed encrypted field");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv, { authTagLength: TAG_LENGTH });
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
 };
