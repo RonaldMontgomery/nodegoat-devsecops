@@ -269,6 +269,14 @@ for target in "https://evil.example/phish" "//evil.example/phish" "/\\evil.examp
   echo "ok - A10 /learn ignores url=${target} and redirects only to the learning resource"
 done
 
+# --- Every template renders (template engine) ---------------------------------
+for page in /tutorial /tutorial/a1 /tutorial/a2 /tutorial/a3 /tutorial/a4 /tutorial/a5 /tutorial/a6 \
+            /tutorial/a7 /tutorial/a8 /tutorial/a9 /tutorial/a10 /tutorial/redos /tutorial/ssrf /signup /research; do
+  out="$(req "${BASE}${page}")"
+  [ "${out%% *}" = "200" ] || fail "GET ${page} returned ${out}"
+done
+echo "ok - all tutorial pages, /signup and /research render (200)"
+
 # Driver errors must not be hiding in the log behind a 200 response.
 if grep -qE "TypeError|MongoServerError|MongoError|UnhandledPromiseRejection" "$TMP/nodegoat.log"; then
   fail "driver or runtime error in application log"
