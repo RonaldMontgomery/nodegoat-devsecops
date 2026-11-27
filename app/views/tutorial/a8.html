@@ -95,7 +95,7 @@
         }); </pre> Next, this token can be included in a hidden form field in
                 <code>views/profile.html</code>as below.
                 <pre>
-    &lt;input type="hidden" name="_csrf" value="{{ csrftoken } }"&gt;</pre>
+    &lt;input type="hidden" name="_csrf" value="{% raw %}{{ csrftoken }}{% endraw %}"&gt;</pre>
             </div>
         </div>
     </div>

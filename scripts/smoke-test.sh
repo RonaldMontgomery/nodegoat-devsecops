@@ -159,6 +159,25 @@ done
 expect_page /allocations/4 "Asset Allocations for Smoke Tester"
 login "smoke$$" Smoke_Pass1 /dashboard
 
+# --- A3 stored XSS through profile fields -------------------------------------
+# A user's name is shown in every page header and in the profile form. Markup in it
+# must come back escaped, in both the HTML body and attribute contexts.
+t="$(token /profile)"
+out="$(req --data-urlencode "_csrf=$t" \
+  --data-urlencode "firstName=<script>alert(1)</script>" \
+  --data-urlencode 'lastName="><img src=x onerror=alert(1)>' \
+  --data-urlencode "bankRouting=123456#" "${BASE}/profile")"
+[ "${out%% *}" = "200" ] || fail "A3: profile update returned ${out}"
+for page in /dashboard /profile; do
+  req "${BASE}${page}" > /dev/null
+  if grep -qiE "<script>alert\(1\)|<img src=x onerror" "$BODY"; then
+    fail "A3: stored XSS: ${page} renders the profile name as markup"
+  fi
+  grep -qF "&lt;script&gt;alert(1)&lt;/script&gt;" "$BODY" \
+    || fail "A3: ${page} does not show the escaped name"
+  echo "ok - A3 ${page} shows a <script>/<img onerror> profile name as escaped text"
+done
+
 # --- A1 NoSQL injection: allocations "threshold" ----------------------------
 # Vulnerable code pasted the threshold into a $where JavaScript string. A
 # tautology returned every user's allocations; a loop hung MongoDB.
@@ -249,6 +268,14 @@ for target in "https://evil.example/phish" "//evil.example/phish" "/\\evil.examp
     || fail "A10: GET /learn?url=${target} returned ${out}, expected 302 to the learning resource"
   echo "ok - A10 /learn ignores url=${target} and redirects only to the learning resource"
 done
+
+# --- Every template renders (template engine) ---------------------------------
+for page in /tutorial /tutorial/a1 /tutorial/a2 /tutorial/a3 /tutorial/a4 /tutorial/a5 /tutorial/a6 \
+            /tutorial/a7 /tutorial/a8 /tutorial/a9 /tutorial/a10 /tutorial/redos /tutorial/ssrf /signup /research; do
+  out="$(req "${BASE}${page}")"
+  [ "${out%% *}" = "200" ] || fail "GET ${page} returned ${out}"
+done
+echo "ok - all tutorial pages, /signup and /research render (200)"
 
 # Driver errors must not be hiding in the log behind a 200 response.
 if grep -qE "TypeError|MongoServerError|MongoError|UnhandledPromiseRejection" "$TMP/nodegoat.log"; then
