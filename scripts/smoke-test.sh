@@ -339,6 +339,73 @@ out="$(req --data-urlencode "_csrf=$t" "${BASE}/logout")"
 [ "${out%% *}" = "302" ] || fail "logout: the logout form rendered right after sign-up was refused (${out})"
 echo "ok - the logout form rendered right after sign-up works"
 
+# --- SSRF, A6 and ReDoS -----------------------------------------------------
+# These record findings and carry on, then fail together, so one run shows all three.
+findings=()
+finding() { echo "FINDING: $*"; findings+=("$*"); }
+login user1 User1_123 /dashboard
+
+# SSRF: /research fetched url+symbol from the query string server-side and copied the
+# response into the page, so a user could make the server read internal addresses
+# (on EC2, the instance metadata service). A local "internal" server stands in for that.
+INTERNAL_PORT=4555
+INTERNAL_DIR="$TMP/internal"
+mkdir -p "$INTERNAL_DIR"
+echo "INTERNAL-SECRET-$$" > "$INTERNAL_DIR/secret.txt"
+python3 -m http.server "$INTERNAL_PORT" --bind 127.0.0.1 --directory "$INTERNAL_DIR" > "$TMP/internal.log" 2>&1 &
+INTERNAL_PID=$!
+trap 'kill "$APP_PID" "$INTERNAL_PID" 2>/dev/null || true' EXIT
+sleep 1
+out="$(req --max-time 10 -G --data-urlencode "url=http://127.0.0.1:${INTERNAL_PORT}/" \
+  --data-urlencode "symbol=secret.txt" "${BASE}/research" || true)"
+if grep -qF "INTERNAL-SECRET-$$" "$BODY" || grep -q "GET /secret.txt" "$TMP/internal.log"; then
+  finding "SSRF: /research fetched an internal URL (${out}) and returned its content"
+else
+  echo "ok - SSRF /research does not fetch user-supplied URLs"
+fi
+out="$(req -G --data-urlencode "symbol=AAPL" "${BASE}/research")"
+[[ "$out" == "302 https://finance.yahoo.com/quote/AAPL" ]] \
+  || finding "SSRF: /research?symbol=AAPL returned '${out}', expected a redirect to the Yahoo quote page"
+out="$(req -G --data-urlencode "symbol=../../evil" "${BASE}/research")"
+[ "${out%% *}" = "400" ] || finding "SSRF: an invalid symbol returned ${out}, expected 400"
+
+# A6: SSN, date of birth and bank details must be encrypted in the database, and the
+# owner must still see the original values.
+t="$(token /profile)"
+req --data-urlencode "_csrf=$t" --data "ssn=123-45-6789&dob=1990-01-31&bankAcc=99887766" \
+  --data-urlencode "bankRouting=123456#" "${BASE}/profile" > /dev/null
+req "${BASE}/profile" > /dev/null
+grep -qF 'value="123-45-6789"' "$BODY" || finding "A6: the profile page does not show the saved SSN"
+node -e '
+  const { MongoClient } = require("mongodb");
+  (async () => {
+    const client = await MongoClient.connect(process.env.MONGODB_URI);
+    const u = await client.db().collection("users").findOne({ _id: 2 });
+    await client.close();
+    const plain = { ssn: "123-45-6789", dob: "1990-01-31", bankAcc: "99887766", bankRouting: "123456#" };
+    const bad = Object.keys(plain).filter(f => String(u[f]).includes(plain[f]) || !/^enc:v1:/.test(String(u[f])));
+    if (bad.length) { console.log("plaintext at rest: " + bad.join(", ")); process.exit(1); }
+  })().catch(e => { console.log(e.message); process.exit(1); });
+' > "$TMP/a6.txt" || finding "A6: $(cat "$TMP/a6.txt")"
+[[ " ${findings[*]:-} " == *" A6:"* ]] || echo "ok - A6 SSN, DOB and bank details are encrypted at rest and shown to the owner"
+
+# ReDoS: the bank routing check /([0-9]+)+\#/ backtracks exponentially on a long run of
+# digits without the '#', freezing the single Node.js thread. Runs last: on vulnerable
+# code it leaves the server busy.
+t="$(token /profile)"
+digits="$(printf '1%.0s' $(seq 1 32))!"
+start=$(date +%s)
+out="$(req --max-time 5 --data-urlencode "_csrf=$t" --data-urlencode "bankRouting=${digits}" "${BASE}/profile" || true)"
+elapsed=$(( $(date +%s) - start ))
+if [ "${out%% *}" != "200" ] || [ "$elapsed" -ge 5 ]; then
+  finding "ReDoS: a 32-digit bank routing value without '#' took ${elapsed}s (${out})"
+else
+  grep -qF "does not comply" "$BODY" || finding "ReDoS: the invalid routing number was not rejected"
+  echo "ok - ReDoS a 32-digit routing value is rejected in ${elapsed}s"
+fi
+
+[ "${#findings[@]}" -eq 0 ] || fail "${#findings[@]} finding(s): ${findings[*]}"
+
 # --- A10 open redirect: /learn ---------------------------------------------
 # /learn used to redirect to any ?url=, so a link on the trusted host could send a
 # logged-in user to a phishing page. It must only ever go to the learning resource.

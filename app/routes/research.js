@@ -1,38 +1,40 @@
-const ResearchDAO = require("../data/research-dao").ResearchDAO;
-const needle = require("needle");
 const {
     environmentalScripts
 } = require("../../config/config");
 
+// Fix for SSRF (Server-Side Request Forgery). Upstream fetched req.query.url +
+// req.query.symbol on the server with needle and copied the response into this site's
+// page. Any user could make the server request any address it can reach (internal
+// services; on EC2 the instance metadata endpoint, which hands out IAM credentials)
+// and read the result, and the remote HTML ran with this site's origin.
+//
+// The server no longer fetches anything: it validates the symbol and sends the browser
+// to the quote page. The destination host is fixed and the symbol is URL-encoded into
+// the path, so this is not an open redirect either.
+const QUOTE_URL = "https://finance.yahoo.com/quote/";
+// Tickers: letters, digits and a few separators used by indices and share classes.
+const SYMBOL_RE = /^[A-Za-z0-9.^=-]{1,12}$/;
+
 function ResearchHandler(db) {
     "use strict";
 
-    const researchDAO = new ResearchDAO(db);
-
     this.displayResearch = (req, res) => {
+        const { symbol } = req.query;
 
-        if (req.query.symbol) {
-            const url = req.query.url + req.query.symbol;
-            return needle.get(url, (error, newResponse, body) => {
-                if (!error && newResponse.statusCode === 200) {
-                    res.writeHead(200, {
-                        "Content-Type": "text/html"
-                    });
-                }
-                res.write("<h1>The following is the stock information you requested.</h1>\n\n");
-                res.write("\n\n");
-                if (body) {
-                    res.write(body);
-                }
-                return res.end();
-            });
+        if (symbol !== undefined) {
+            if (typeof symbol !== "string" || !SYMBOL_RE.test(symbol)) {
+                return res.status(400).render("research", {
+                    symbolError: "Enter a stock symbol: letters, digits, '.', '-', '^' or '=' (up to 12).",
+                    environmentalScripts
+                });
+            }
+            return res.redirect(QUOTE_URL + encodeURIComponent(symbol));
         }
 
         return res.render("research", {
             environmentalScripts
         });
     };
-
 }
 
 module.exports = ResearchHandler;

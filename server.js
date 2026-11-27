@@ -52,11 +52,14 @@ connect(db, (err, db) => {
     // (scripts only from this origin; no inline scripts), Strict-Transport-Security,
     // X-Content-Type-Options: nosniff, X-Frame-Options: SAMEORIGIN and Referrer-Policy,
     // and remove X-Powered-By. The tutorial pages embed YouTube videos, so frame-src
-    // allows that one origin. scripts/smoke-test.sh checks the headers.
+    // allows that one origin; the research form redirects to the Yahoo Finance quote page,
+    // and form-action also governs redirects after a form submit, so it allows that origin.
+    // scripts/smoke-test.sh checks the headers.
     app.use(helmet({
         contentSecurityPolicy: {
             directives: {
-                "frame-src": ["'self'", "https://www.youtube.com"]
+                "frame-src": ["'self'", "https://www.youtube.com"],
+                "form-action": ["'self'", "https://finance.yahoo.com"]
             }
         }
     }));
