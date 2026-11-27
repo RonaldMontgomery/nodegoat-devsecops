@@ -1,3 +1,5 @@
+const { toCallback } = require("./mongo");
+
 /* The BenefitsDAO must be constructed with a connected database object */
 function BenefitsDAO(db) {
 
@@ -13,21 +15,21 @@ function BenefitsDAO(db) {
     const usersCol = db.collection("users");
 
     this.getAllNonAdminUsers = callback => {
-        usersCol.find({
+        toCallback(usersCol.find({
             "isAdmin": {
                 $ne: true
             }
-        }).toArray((err, users) => callback(null, users));
+        }).toArray(), callback);
     };
 
     this.updateBenefits = (userId, startDate, callback) => {
-        usersCol.update({
+        toCallback(usersCol.updateOne({
                 _id: parseInt(userId)
             }, {
                 $set: {
                     benefitStartDate: startDate
                 }
-            },
+            }),
             (err, result) => {
                 if (!err) {
                     console.log("Updated benefits");

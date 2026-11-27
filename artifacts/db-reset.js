@@ -36,100 +36,70 @@ const USERS_TO_INSERT = [
         //"password" : "$2a$10$Tlx2cNv15M0Aia7wyItjsepeA8Y6PyBYaNdQqvpxkIUlcONf1ZHyq", // User2_123
     }];
 
-const tryDropCollection = (db, name) => {
-    return new Promise((resolve, reject) => {
-        db.dropCollection(name, (err, data) => {
-            if (!err) {
-                console.log(`Dropped collection: ${name}`);
-            }
-            resolve(undefined);
-        });
-    });
-};
+const collectionNames = [
+    "users",
+    "allocations",
+    "contributions",
+    "memos",
+    "counters"
+];
 
-const parseResponse = (err, res, comm) => {
-    if (err) {
-        console.log("ERROR:");
-        console.log(comm);
-        console.log(JSON.stringify(err));
-        process.exit(1);
-    }
-    console.log(comm);
-    console.log(JSON.stringify(res));
-};
-
-
-// Starting here
-MongoClient.connect(db, (err, db) =>  {
-    if (err) {
-        console.log("ERROR: connect");
-        console.log(JSON.stringify(err));
-        process.exit(1);
-    }
+// MongoDB driver 7.x: connect() resolves to a MongoClient and every call returns a promise.
+const reset = async () => {
+    const client = await MongoClient.connect(db);
     console.log("Connected to the database");
+    const database = client.db();
 
-    const collectionNames = [
-        "users",
-        "allocations",
-        "contributions",
-        "memos",
-        "counters"
-    ];
-
-    // remove existing data (if any), we don't want to look for errors here
-    console.log("Dropping existing collections");
-    const dropPromises = collectionNames.map((name) => tryDropCollection(db, name));
-
-    // Wait for all drops to finish (or fail) before continuing
-    Promise.all(dropPromises).then(() => {
-        const usersCol = db.collection("users");
-        const allocationsCol = db.collection("allocations");
-        const countersCol = db.collection("counters");
+    try {
+        // remove existing data (if any), we don't want to look for errors here
+        console.log("Dropping existing collections");
+        await Promise.all(collectionNames.map(name => database.dropCollection(name)
+            .then(() => console.log(`Dropped collection: ${name}`))
+            .catch(() => undefined)));
 
         // reset unique id counter
-        countersCol.insert({
+        const counter = await database.collection("counters").insertOne({
             _id: "userId",
             seq: 3
-        }, (err, data) => {
-            parseResponse(err, data, "countersCol.insert");
         });
+        console.log("countersCol.insertOne");
+        console.log(JSON.stringify(counter));
 
         // insert admin and test users
         console.log("Users to insert:");
         USERS_TO_INSERT.forEach((user) => console.log(JSON.stringify(user)));
+        const users = await database.collection("users").insertMany(USERS_TO_INSERT);
+        console.log("users.insertMany");
+        console.log(JSON.stringify(users));
 
-        usersCol.insertMany(USERS_TO_INSERT, (err, data) => {
-            const finalAllocations = [];
-
-            // We can't continue if error here
-            if (err) {
-                console.log("ERROR: insertMany");
-                console.log(JSON.stringify(err));
-                process.exit(1);
-            }
-            parseResponse(err, data, "users.insertMany");
-
-            data.ops.forEach((user) => {
-                const stocks = Math.floor((Math.random() * 40) + 1);
-                const funds = Math.floor((Math.random() * 40) + 1);
-
-                finalAllocations.push({
-                    userId: user._id,
-                    stocks: stocks,
-                    funds: funds,
-                    bonds: 100 - (stocks + funds)
-                });
-            });
-
-            console.log("Allocations to insert:");
-            finalAllocations.forEach(allocation => console.log(JSON.stringify(allocation)));
-
-            allocationsCol.insertMany(finalAllocations, (err, data) => {
-                parseResponse(err, data, "allocations.insertMany");
-                console.log("Database reset performed successfully");
-                process.exit(0);
-            });
-
+        // Driver 4.0 removed result.ops, so build allocations from the seed list itself.
+        const finalAllocations = USERS_TO_INSERT.map((user) => {
+            const stocks = Math.floor((Math.random() * 40) + 1);
+            const funds = Math.floor((Math.random() * 40) + 1);
+            return {
+                userId: user._id,
+                stocks: stocks,
+                funds: funds,
+                bonds: 100 - (stocks + funds)
+            };
         });
-    });
+
+        console.log("Allocations to insert:");
+        finalAllocations.forEach(allocation => console.log(JSON.stringify(allocation)));
+        const allocations = await database.collection("allocations").insertMany(finalAllocations);
+        console.log("allocations.insertMany");
+        console.log(JSON.stringify(allocations));
+    } finally {
+        await client.close();
+    }
+};
+
+// Starting here
+reset().then(() => {
+    console.log("Database reset performed successfully");
+    process.exit(0);
+}, (err) => {
+    console.log("ERROR:");
+    console.log(err && err.message ? err.message : JSON.stringify(err));
+    process.exit(1);
 });
