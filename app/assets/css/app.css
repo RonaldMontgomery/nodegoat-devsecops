@@ -1,0 +1,18 @@
+/* Logout is a POST form (CSRF protection); make its button look like the menu links. */
+.logout-form {
+    margin: 0;
+}
+
+.logout-form .logout-link {
+    display: block;
+    width: 100%;
+    padding: 10px 15px;
+    border: 0;
+    color: inherit;
+    text-align: left;
+    text-decoration: none;
+}
+
+.dropdown-menu .logout-form .logout-link {
+    padding: 3px 20px;
+}

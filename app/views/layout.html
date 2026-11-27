@@ -14,6 +14,7 @@
 
     <!-- Add custom CSS here -->
     <link href="/vendor/theme/sb-admin.css" rel="stylesheet">
+    <link href="/css/app.css" rel="stylesheet">
     <link rel="stylesheet" href="/vendor/theme/font-awesome/css/font-awesome.min.css">
     <link rel="stylesheet" href="/vendor/bootstrap/bootstrap-tour.css">
     <!--[if lt IE 9]><script src="/vendor/html5shiv.js"><![endif]-->
@@ -64,7 +65,11 @@
                     <li><a id="research-menu-link" href="/research"><i class="fa fa-table"></i> Research</a>
                     </li>
                     {% endif %}
-                    <li><a id="logout-menu-link" href="/logout"><i class="fa fa-power-off"></i> Logout</a>
+                    <!-- Logout is a POST with the CSRF token, so another site cannot log users out. -->
+                    <li><form method="post" action="/logout" class="logout-form">
+                        <input type="hidden" name="_csrf" value="{{csrftoken}}" />
+                        <button type="submit" id="logout-menu-link" class="btn btn-link logout-link"><i class="fa fa-power-off"></i> Logout</button>
+                    </form>
                     </li>
                 </ul>
 
@@ -79,7 +84,10 @@
                             </li>
                             <li class="divider"></li>
                             {% endif %}
-                            <li><a href="/logout"><i class="fa fa-power-off"></i> Log Out</a>
+                            <li><form method="post" action="/logout" class="logout-form">
+                                <input type="hidden" name="_csrf" value="{{csrftoken}}" />
+                                <button type="submit" class="btn btn-link logout-link"><i class="fa fa-power-off"></i> Log Out</button>
+                            </form>
                             </li>
                         </ul>
                     </li>

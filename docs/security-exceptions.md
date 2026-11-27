@@ -42,4 +42,5 @@ Each exclusion is backed by a test of the real control.
 |---|---|---|
 | `express-cookie-session-no-expires` | Expiry is set with `maxAge`, which express-session recommends over `expires` | Smoke test asserts `Expires=` in `Set-Cookie` |
 | `express-cookie-session-no-domain` | No `Domain` keeps the cookie host-only, stricter than any `Domain` value | Smoke test asserts no `Domain=` |
-| `python.django.security.django-no-csrf-token` | Looks for Django's `{% csrf_token %}`, which Nunjucks does not have; the forms carry csurf's `_csrf` field | Smoke test: forged POSTs without or with a wrong token get 403 |
+| `python.django.security.django-no-csrf-token` | Looks for Django's `{% csrf_token %}`, which Nunjucks does not have; the forms carry the `_csrf` field | Smoke test: forged POSTs without or with a wrong token get 403 |
+| `express-check-csurf-middleware-usage` | Only recognises the `csurf` and `csrf` packages; protection is `csrf-sync` (`app/csrf.js`), which replaced the archived `csurf` | `test/ci/csrf.test.js`; smoke test: forged POSTs (including logout) get 403 |
