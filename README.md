@@ -63,7 +63,7 @@ Gitleaks did not flag the hard-coded `cookieSecret` and `cryptoKey` in `config/e
 
 ## Lab 3: CI
 
-`build-test` runs on every push and on PRs to `main`, with a disposable `mongo:4.4` service container:
+`build-test` runs on every push and on PRs to `main`, with a disposable `mongo:8.0` service container:
 
 1. `npm ci` (upstream Grunt, Cypress 3, Mocha/Selenium/ZAP and `forever` tooling removed; see the dependency cleanup PR)
 2. `npm run lint`: ESLint with [eslint.config.js](eslint.config.js) (replaced upstream jshint and its unpinned `lint.yml`)
@@ -101,14 +101,14 @@ Upstream's `e2e-test.yml` (Cypress on Node 10–14) and `lint.yml` were removed.
 
 | Upstream | This repo |
 |---|---|
-| `node:12-alpine` (EOL), copies the entire repo, `npm install` | `node:22-trixie-slim` deps stage with `npm ci --omit=dev --ignore-scripts`; `gcr.io/distroless/nodejs22-debian13:nonroot` runtime (moved from Debian 12 for CVE-2026-31789) |
+| `node:12-alpine` (EOL), copies the entire repo, `npm install` | Chainguard `node:latest-dev` deps stage with `npm ci --omit=dev --ignore-scripts`; Chainguard `node:latest` runtime (Wolfi, Cosign-verified in CI). Earlier: distroless Debian 12 → 13, then off Debian because Debian 13 had 56 OS CVEs with no fix available |
 | Named user `node` | Numeric `USER 65532` (avoids Hadolint DL3066, as in my-app) |
 | No `CMD`; dev defaults | `NODE_ENV=production`, so missing secrets stop the container |
 | Whole build context | Explicit `COPY` of `server.js`, `app/`, `config/`, `artifacts/db-reset.js`; `.dockerignore` drops tests, infra, policy, CI, secrets |
 
 Hadolint 2.14.0 reports no findings on this Dockerfile.
 
-Node 22 is used here instead of my-app's Node 24. Node 23 removed the long-deprecated `util.is*` helpers, which NodeGoat's 2016-era dependencies may still call. Node 22 is LTS through April 2027. I'll revisit after the dependency upgrades.
+The runtime follows the newest Node.js release (Chainguard's free `node:latest`; `node-lts` needs a paid account), and CI tests on the same line (`current`). Node 22 was used until the 2016-era dependencies were upgraded or replaced; the CI smoke test and the container start-up test check the app on the new runtime.
 
 `docker-compose.yml` is hardened for the EC2 target:
 
@@ -120,7 +120,7 @@ Node 22 is used here instead of my-app's Node 24. Node 23 removed the long-depre
 
 `container-security.yml` is my-app's workflow with the image renamed. On `main` (or a manual run) the `publish-sign` job rebuilds and rescans the image, pushes `ghcr.io/<owner>/<repo>:<sha>`, resolves the immutable digest, signs it with Cosign keyless (GitHub OIDC), and attaches a GitHub build-provenance attestation. A separate `verify` job checks `gh attestation verify --signer-workflow` and `cosign verify` against the exact workflow identity on `refs/heads/main` before the placeholder `deploy` job.
 
-A non-blocking Trivy report for `mongo:4.4` was added. 4.4 is end-of-life, but the mongodb 2.x driver can't talk to a supported server yet.
+MongoDB runs `mongo:8.0` (4.4 was end-of-life; possible once the driver was ported to 7.x). Its image is scanned on every run but does not block: see exception EX-01 in [docs/security-exceptions.md](docs/security-exceptions.md).
 
 **Expected state:** the image includes NodeGoat's production dependencies, so the Critical gate is expected to fail, and publishing and signing are skipped until the dependency work lands.
 

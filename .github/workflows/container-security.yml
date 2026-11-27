@@ -13,12 +13,69 @@ jobs:
   container-security:
     runs-on: ubuntu-latest
 
+    # Disposable MongoDB so the built image can be started and tested, not only scanned.
+    services:
+      mongo:
+        image: mongo:8.0
+        ports:
+          - 127.0.0.1:27017:27017
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Supply chain: refuse to build on a base image Chainguard did not sign.
+      - name: Verify base image signatures (Chainguard)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in $(awk 'toupper($1) == "FROM" {print $2}' Dockerfile | sort -u); do
+            echo "Verifying ${image}"
+            cosign verify \
+              --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+              --certificate-identity=https://github.com/chainguard-images/images/.github/workflows/release.yaml@refs/heads/main \
+              "${image}" > /dev/null
+            echo "ok - ${image} is signed by Chainguard's release workflow"
+          done
+
       - name: Build hardened container image
         run: docker build -t nodegoat:${{ github.sha }} .
+
+      # The image must actually run under the same restrictions as Compose/Kubernetes:
+      # non-root, read-only root filesystem, no capabilities, no privilege escalation.
+      - name: Start the image and check it serves HTTPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Node.js in image: $(docker run --rm nodegoat:${{ github.sha }} --version)"
+          tls="${RUNNER_TEMP}/tls"
+          bash scripts/dev-cert.sh "$tls" > /dev/null
+          secret() { node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))'; }
+          docker run --rm --network host \
+            -e MONGODB_URI=mongodb://127.0.0.1:27017/nodegoat \
+            -e SESSION_SECRET="$(secret)" -e CRYPTO_KEY="$(secret)" \
+            nodegoat:${{ github.sha }} artifacts/db-reset.js > /dev/null
+          docker run -d --name app --network host \
+            --user 65532:65532 --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -v "$tls:/run/secrets/tls:ro" \
+            -e TLS_KEY_FILE=/run/secrets/tls/tls.key -e TLS_CERT_FILE=/run/secrets/tls/tls.crt \
+            -e MONGODB_URI=mongodb://127.0.0.1:27017/nodegoat \
+            -e SESSION_SECRET="$(secret)" -e CRYPTO_KEY="$(secret)" \
+            nodegoat:${{ github.sha }}
+          for _ in $(seq 1 30); do
+            code="$(curl --silent --cacert "$tls/tls.crt" --output /dev/null --write-out '%{http_code}' \
+              https://127.0.0.1:4000/login || true)"
+            [ "$code" = "200" ] && break
+            sleep 1
+          done
+          docker logs app
+          [ "$code" = "200" ] || { echo "::error::container did not serve /login (last status ${code})"; exit 1; }
+          echo "ok - hardened container serves https://127.0.0.1:4000/login (200)"
+          docker rm -f app > /dev/null
 
       - name: Hadolint Dockerfile
         run: docker run --rm -i hadolint/hadolint < Dockerfile
@@ -42,24 +99,23 @@ jobs:
 
           echo "${RUNNER_TEMP}/trivy-bin" >> "$GITHUB_PATH"
 
-      - name: Scan image for Critical vulnerabilities
+      # Midterm standard: block every severity, including UNKNOWN and unfixed findings
+      # (no --severity filter, no --ignore-unfixed).
+      - name: Scan image for vulnerabilities at every severity
         run: |
           trivy image \
             --scanners vuln \
-            --severity CRITICAL \
             --exit-code 1 \
             nodegoat:${{ github.sha }}
 
-      # MongoDB 4.4 is end-of-life. NodeGoat's mongodb 2.x driver cannot talk to a
-      # supported server, so this scan reports but does not block until the driver
-      # upgrade lands (tracked in docs/draft-pipeline-review.md).
-      - name: Report MongoDB image vulnerabilities (non-blocking, tracked)
+      # Documented exception EX-01 (docs/security-exceptions.md): the official MongoDB
+      # image is third-party and cannot meet the every-severity standard (Ubuntu
+      # packages with no fix, plus old Go toolchains in its bundled tools and gosu).
+      # It is scanned on every run and reported, but does not block. The exception
+      # does not cover anything this repository builds, signs or deploys.
+      - name: Report MongoDB image vulnerabilities (exception EX-01, non-blocking)
         run: |
-          trivy image \
-            --scanners vuln \
-            --severity CRITICAL,HIGH \
-            --exit-code 0 \
-            mongo:4.4
+          trivy image --scanners vuln --exit-code 0 mongo:8.0
 
   # Each scanner is its own workflow, so "needs:" cannot see them. Before anything is
   # published or signed, wait for the other required checks on this same commit and
@@ -181,11 +237,10 @@ jobs:
 
           echo "${RUNNER_TEMP}/trivy-bin" >> "$GITHUB_PATH"
 
-      - name: Gate published image on Critical vulnerabilities
+      - name: Gate published image on vulnerabilities at every severity
         run: |
           trivy image \
             --scanners vuln \
-            --severity CRITICAL \
             --exit-code 1 \
             "$IMAGE"
 
