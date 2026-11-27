@@ -192,6 +192,54 @@ test("MemosDAO inserts memos and lists newest first", async () => {
     assert.deepStrictEqual(list.map(m => m.memo), ["second", "first"]);
 });
 
+// A6 Sensitive Data Exposure: SSN, date of birth and bank details used to be stored in
+// plaintext, so anyone with database (or backup) access could read them.
+const SENSITIVE = { ssn: "123-45-6789", dob: "1990-01-31", bankAcc: "99887766", bankRouting: "123456#" };
+const saveSensitive = (profile, userId) => call(profile.updateUser, userId, "", "", SENSITIVE.ssn, SENSITIVE.dob,
+    "", SENSITIVE.bankAcc, SENSITIVE.bankRouting);
+
+test("A6: SSN, date of birth and bank details are encrypted at rest", async () => {
+    const db = seededDb();
+    const profile = new ProfileDAO(db);
+    await saveSensitive(profile, "2");
+    const stored = db.collection("users").docs.find(u => u._id === 2);
+    for (const [field, plain] of Object.entries(SENSITIVE)) {
+        assert.ok(!String(stored[field]).includes(plain), `${field} stored in plaintext: ${stored[field]}`);
+        assert.match(String(stored[field]), /^enc:v1:/, `${field} is not in the encrypted format`);
+    }
+});
+
+test("A6: the owner still reads the original values", async () => {
+    const profile = new ProfileDAO(seededDb());
+    await saveSensitive(profile, "2");
+    const user = await call(profile.getByUserId, "2");
+    for (const [field, plain] of Object.entries(SENSITIVE)) assert.strictEqual(user[field], plain, field);
+});
+
+test("A6: equal values encrypt differently (random IV per value)", async () => {
+    const db = seededDb();
+    const profile = new ProfileDAO(db);
+    await saveSensitive(profile, "2");
+    await saveSensitive(profile, "3");
+    const [a, b] = [2, 3].map(id => db.collection("users").docs.find(u => u._id === id).ssn);
+    assert.notStrictEqual(a, b);
+});
+
+test("A6: a tampered ciphertext is rejected, not decrypted to something else", async () => {
+    const db = seededDb();
+    const profile = new ProfileDAO(db);
+    await saveSensitive(profile, "2");
+    const doc = db.collection("users").docs.find(u => u._id === 2);
+    const parts = doc.ssn.split(":");
+    const ct = Buffer.from(parts[4], "base64");
+    ct[0] ^= 0x01;
+    parts[4] = ct.toString("base64");
+    doc.ssn = parts.join(":");
+    const user = await call(profile.getByUserId, "2");
+    assert.strictEqual(user.ssn, "", "tampered SSN should not be shown");
+    assert.strictEqual(user.dob, SENSITIVE.dob, "other fields unaffected");
+});
+
 test("ProfileDAO updates and reads a profile", async () => {
     const profile = new ProfileDAO(seededDb());
     const updated = await call(profile.updateUser, "2", "Johnny", "", "", "", "1 Main St", "", "");
