@@ -68,9 +68,16 @@ expect_page() { # expect_page <path> <text that must appear>
   grep -qF "$2" "$BODY" || fail "GET $1 did not contain: $2"
   echo "ok - GET $1 shows \"$2\""
 }
+# token <path>: GET a page and print its _csrf form token (empty if the page has none).
+token() {
+  req "${BASE}$1" > /dev/null
+  sed -n 's/.*name="_csrf" value="\([^"]*\)".*/\1/p' "$BODY" | head -n 1
+}
 login() { # login <user> <password> <expected redirect path>
   rm -f "$JAR"
-  local out; out="$(req --data-urlencode "userName=$1" --data-urlencode "password=$2" "${BASE}/login")"
+  local t; t="$(token /login)"
+  local out; out="$(req --data-urlencode "_csrf=$t" --data-urlencode "userName=$1" \
+    --data-urlencode "password=$2" "${BASE}/login")"
   [[ "$out" == "302 "*"$3" ]] || fail "login as $1 returned ${out}, expected 302 -> $3"
   echo "ok - $1 logs in and is redirected to $3"
 }
@@ -96,14 +103,16 @@ expect_page /dashboard "John Doe"
 expect_page /profile "Doe"
 expect_page /allocations/2 "Asset Allocations for John Doe"
 
-out="$(req --data "preTax=5&afterTax=6&roth=7" "${BASE}/contributions")"
+t="$(token /contributions)"
+out="$(req --data-urlencode "_csrf=$t" --data "preTax=5&afterTax=6&roth=7" "${BASE}/contributions")"
 [ "${out%% *}" = "200" ] && grep -qF "Contributions updated successfully" "$BODY" \
   || fail "POST /contributions returned ${out}"
 echo "ok - POST /contributions saves (replaceOne upsert)"
 expect_page /contributions "<td>5 %</td>"
 
 MEMO="smoke-memo-$$"
-out="$(req --data "memo=${MEMO}" "${BASE}/memos")"
+t="$(token /memos)"
+out="$(req --data-urlencode "_csrf=$t" --data "memo=${MEMO}" "${BASE}/memos")"
 [ "${out%% *}" = "200" ] && grep -qF "$MEMO" "$BODY" || fail "POST /memos returned ${out}"
 echo "ok - POST /memos inserts and lists the memo"
 
@@ -113,7 +122,8 @@ expect_page /benefits "Will"
 # Sign-up takes _id 4 from the counters collection (findOneAndUpdate) and creates
 # allocations for the new user asynchronously.
 rm -f "$JAR"
-out="$(req --data "userName=smoke$$&firstName=Smoke&lastName=Tester&password=Smoke_Pass1&verify=Smoke_Pass1&email=smoke@example.test" "${BASE}/signup")"
+t="$(token /signup)"
+out="$(req --data-urlencode "_csrf=$t" --data "userName=smoke$$&firstName=Smoke&lastName=Tester&password=Smoke_Pass1&verify=Smoke_Pass1&email=smoke@example.test" "${BASE}/signup")"
 [ "${out%% *}" = "200" ] && grep -qF "Smoke Tester" "$BODY" || fail "POST /signup returned ${out}"
 echo "ok - POST /signup creates a user"
 for _ in $(seq 1 10); do
@@ -165,6 +175,39 @@ if grep -qF "John Doe" "$BODY"; then fail "A4: user2 read user1's allocations ($
 [ "${out%% *}" = "403" ] || fail "A4: user2 GET /allocations/2 returned ${out}, expected 403"
 echo "ok - A4 user2 cannot read /allocations/2 (403)"
 expect_page /allocations/3 "Asset Allocations for Will Smith"
+
+# --- A8 CSRF: state-changing POSTs need the session's token -----------------
+# A forged request carries the victim's session cookie but cannot read the token
+# from the victim's pages. Each POST without a token, or with a made-up one, must
+# get 403 and change nothing.
+csrf_refused() { # csrf_refused <path> <form data> <description>
+  local out
+  out="$(req --data "$2" "${BASE}$1")"
+  [ "${out%% *}" = "403" ] || fail "A8: POST $1 without a CSRF token returned ${out}, expected 403 ($3)"
+  out="$(req --data "_csrf=forged-token&$2" "${BASE}$1")"
+  [ "${out%% *}" = "403" ] || fail "A8: POST $1 with a forged CSRF token returned ${out}, expected 403 ($3)"
+  echo "ok - A8 POST $1 without or with a forged token is refused (403): $3"
+}
+
+login user1 User1_123 /dashboard
+csrf_refused /contributions "preTax=9&afterTax=9&roth=9" "contributions"
+expect_page /contributions "<td>5 %</td>"
+csrf_refused /memos "memo=csrf-forged-$$" "memo"
+expect_page /memos "$MEMO"
+if grep -qF "csrf-forged-$$" "$BODY"; then fail "A8: forged memo was stored"; fi
+csrf_refused /profile "firstName=Forged&lastName=Forged" "profile"
+expect_page /profile "Doe"
+if grep -qF "Forged" "$BODY"; then fail "A8: forged profile update was stored"; fi
+
+login admin Admin_123 /benefits
+csrf_refused /benefits "userId=2&benefitStartDate=2099-01-01" "benefits"
+expect_page /benefits "Will"
+if grep -qF "2099-01-01" "$BODY"; then fail "A8: forged benefits update was stored"; fi
+
+rm -f "$JAR"
+out="$(req --data "userName=user1&password=User1_123" "${BASE}/login")"
+[ "${out%% *}" = "403" ] || fail "A8: POST /login without a CSRF token returned ${out}, expected 403 (login CSRF)"
+echo "ok - A8 POST /login without a token is refused (403): login CSRF"
 
 # Driver errors must not be hiding in the log behind a 200 response.
 if grep -qE "TypeError|MongoServerError|MongoError|UnhandledPromiseRejection" "$TMP/nodegoat.log"; then
