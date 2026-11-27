@@ -38,7 +38,10 @@ const index = (app, db) => {
     app.post("/signup", sessionHandler.handleSignup);
 
     // Logout page
-    app.get("/logout", sessionHandler.displayLogoutPage);
+    // Fix for CSRF on logout: ending a session is a state change, so it is a POST that
+    // needs the CSRF token. GET /logout no longer logs anyone out.
+    app.post("/logout", sessionHandler.handleLogout);
+    app.get("/logout", (req, res) => res.redirect(req.session.userId ? "/dashboard" : "/login"));
 
     // The main page of the app
     app.get("/dashboard", isLoggedIn, sessionHandler.displayWelcomePage);

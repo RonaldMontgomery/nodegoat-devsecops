@@ -92,8 +92,12 @@ function SessionHandler(db) {
         });
     };
 
-    this.displayLogoutPage = (req, res) => {
-        req.session.destroy(() => res.redirect("/"));
+    this.handleLogout = (req, res, next) => {
+        req.session.destroy(err => {
+            if (err) return next(err);
+            res.clearCookie("sessionId", { path: "/", httpOnly: true, secure: true, sameSite: "strict" });
+            return res.redirect("/login");
+        });
     };
 
     this.displaySignupPage = (req, res) => {
