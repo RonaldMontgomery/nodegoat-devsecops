@@ -159,6 +159,25 @@ done
 expect_page /allocations/4 "Asset Allocations for Smoke Tester"
 login "smoke$$" Smoke_Pass1 /dashboard
 
+# --- A3 stored XSS through profile fields -------------------------------------
+# A user's name is shown in every page header and in the profile form. Markup in it
+# must come back escaped, in both the HTML body and attribute contexts.
+t="$(token /profile)"
+out="$(req --data-urlencode "_csrf=$t" \
+  --data-urlencode "firstName=<script>alert(1)</script>" \
+  --data-urlencode 'lastName="><img src=x onerror=alert(1)>' \
+  --data-urlencode "bankRouting=123456#" "${BASE}/profile")"
+[ "${out%% *}" = "200" ] || fail "A3: profile update returned ${out}"
+for page in /dashboard /profile; do
+  req "${BASE}${page}" > /dev/null
+  if grep -qiE "<script>alert\(1\)|<img src=x onerror" "$BODY"; then
+    fail "A3: stored XSS: ${page} renders the profile name as markup"
+  fi
+  grep -qF "&lt;script&gt;alert(1)&lt;/script&gt;" "$BODY" \
+    || fail "A3: ${page} does not show the escaped name"
+  echo "ok - A3 ${page} shows a <script>/<img onerror> profile name as escaped text"
+done
+
 # --- A1 NoSQL injection: allocations "threshold" ----------------------------
 # Vulnerable code pasted the threshold into a $where JavaScript string. A
 # tautology returned every user's allocations; a loop hung MongoDB.
