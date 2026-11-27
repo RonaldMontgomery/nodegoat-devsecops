@@ -65,10 +65,10 @@ Gitleaks did not flag the hard-coded `cookieSecret` and `cryptoKey` in `config/e
 
 `build-test` runs on every push and on PRs to `main`, with a disposable `mongo:4.4` service container:
 
-1. `npm ci` (Cypress binary download skipped; it is an unused upstream e2e dependency)
+1. `npm ci` (upstream Grunt, Cypress 3, Mocha/Selenium/ZAP and `forever` tooling removed; see the dependency cleanup PR)
 2. `npx jshint .` (upstream lint config; replaces upstream's unpinned `lint.yml`)
-3. `npm run test:unit`: Node built-in test runner, 5 tests covering the Lab 2 secret handling ([test/ci/config.test.js](test/ci/config.test.js))
-4. [scripts/smoke-test.sh](scripts/smoke-test.sh): seeds MongoDB, starts the app in production mode with throwaway secrets, checks `GET /login` returns 200, checks anonymous requests to `/dashboard`, `/profile`, `/contributions`, `/memos` redirect to `/login`, and checks the session secret never appears in the app log
+3. `npm run test:unit`: Node built-in test runner: Lab 2 secret handling ([config.test.js](test/ci/config.test.js)), MongoDB driver 7 DAO contracts and A1 injection tests ([dao.test.js](test/ci/dao.test.js)), A4 BOLA tests ([authz.test.js](test/ci/authz.test.js))
+4. [scripts/smoke-test.sh](scripts/smoke-test.sh): seeds MongoDB, starts the app in production mode with throwaway secrets, checks `GET /login` returns 200, checks anonymous requests to `/dashboard`, `/profile`, `/contributions`, `/memos` redirect to `/login`, and checks the session secret never appears in the app log; then logs in as two synthetic users and exercises every DAO, the A1 injection payloads and the A4 cross-user requests against the real database
 5. Package `app.tar.gz` (excludes `.git`, `.github`, `node_modules`, env files, `.npmrc`) and upload it as `app-<sha>`, retained for 14 days
 
 `aws-oidc` runs on `main` only, after `build-test`, and only once the `AWS_ROLE_ARN` repository variable is set (the IAM trust policy must first name this repository's OIDC subject). It prints the token subject/audience and runs `aws sts get-caller-identity`. No long-lived AWS keys exist.
@@ -101,7 +101,7 @@ Upstream's `e2e-test.yml` (Cypress on Node 10–14) and `lint.yml` were removed.
 
 | Upstream | This repo |
 |---|---|
-| `node:12-alpine` (EOL), copies the entire repo, `npm install` | `node:22-bookworm-slim` deps stage with `npm ci --omit=dev --ignore-scripts`; `gcr.io/distroless/nodejs22-debian12:nonroot` runtime |
+| `node:12-alpine` (EOL), copies the entire repo, `npm install` | `node:22-trixie-slim` deps stage with `npm ci --omit=dev --ignore-scripts`; `gcr.io/distroless/nodejs22-debian13:nonroot` runtime (moved from Debian 12 for CVE-2026-31789) |
 | Named user `node` | Numeric `USER 65532` (avoids Hadolint DL3066, as in my-app) |
 | No `CMD`; dev defaults | `NODE_ENV=production`, so missing secrets stop the container |
 | Whole build context | Explicit `COPY` of `server.js`, `app/`, `config/`, `artifacts/db-reset.js`; `.dockerignore` drops tests, infra, policy, CI, secrets |

@@ -10,9 +10,8 @@
     "consolidate": "^0.14.1",
     "csurf": "^1.8.3",
     "dont-sniff-mimetype": "^1.0.0",
-    "express": "^4.13.4",
+    "express": "^4.21.2",
     "express-session": "^1.13.0",
-    "forever": "^2.0.0",
     "helmet": "^2.0.0",
     "marked": "0.3.5",
     "mongodb": "^7.8.0",
@@ -20,47 +19,32 @@
     "node-esapi": "0.0.1",
     "serve-favicon": "^2.3.0",
     "swig": "^1.4.2",
-    "underscore": "^1.8.3"
+    "underscore": "^1.13.8"
   },
   "comments": {
     "//": "a9 insecure components"
   },
   "scripts": {
     "start": "node server.js",
-    "dev": "cross-env PORT=5000 nodemon",
-    "test:e2e": "cross-env NODE_ENV=test cypress open",
-    "test:ci": "cross-env NODE_ENV=test cypress run",
-    "test": "node node_modules/grunt-cli/bin/grunt test",
+    "dev": "cross-env PORT=5000 node --watch server.js",
+    "test": "npm run test:unit",
     "test:unit": "node --test test/ci/*.test.js",
-    "db:seed": "cross-env NODE_ENV=test grunt db-reset",
-    "precommit": "grunt precommit",
-    "docker-mongo": "docker run -p 27017:27017 --name mongo  mongo:latest",
+    "lint": "jshint .",
+    "db:seed": "cross-env NODE_ENV=test node artifacts/db-reset.js",
+    "precommit": "npm run lint",
+    "docker-mongo": "docker run -p 127.0.0.1:27017:27017 --name mongo mongo:4.4",
     "start-infra": "docker-compose up",
-    "stop-infra": "docker-compose down",
-    "cy:verify": "cypress verify"
+    "stop-infra": "docker-compose down"
   },
   "devDependencies": {
-    "async": "^2.0.0-rc.4",
     "cross-env": "^7.0.2",
-    "cypress": "^3.3.1",
-    "grunt": "^1.0.3",
-    "grunt-cli": "^1.2.0",
-    "grunt-concurrent": "^2.3.0",
-    "grunt-contrib-jshint": "^3.0.0",
-    "grunt-contrib-watch": "^1.0.0",
-    "grunt-env": "latest",
-    "grunt-if": "https://github.com/binarymist/grunt-if/tarball/master",
-    "grunt-jsbeautifier": "^0.2.12",
-    "grunt-mocha-test": "^0.12.7",
-    "grunt-npm-install": "^0.3.0",
-    "grunt-retire": "^0.3.12",
-    "jshint": "2.12.0",
-    "mocha": "^2.4.5",
-    "nodemon": "^1.19.1",
-    "selenium-webdriver": "^2.53.2",
-    "should": "^8.3.1",
-    "zaproxy": "^0.2.0"
+    "jshint": "2.12.0"
   },
   "repository": "https://github.com/OWASP/NodejsGoat",
-  "license": "Apache 2.0"
+  "license": "Apache 2.0",
+  "overrides": {
+    "optimist": {
+      "minimist": "0.2.4"
+    }
+  }
 }

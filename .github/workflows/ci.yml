@@ -21,8 +21,6 @@ jobs:
           - 127.0.0.1:27017:27017
 
     env:
-      # Cypress (upstream e2e devDependency) is not used in CI; skip its 150 MB binary.
-      CYPRESS_INSTALL_BINARY: "0"
       MONGODB_URI: mongodb://127.0.0.1:27017/nodegoat
 
     steps:
