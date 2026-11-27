@@ -31,6 +31,7 @@ variable "cosign_version" {
 variable "cosign_sha256" {
   description = "SHA-256 of cosign-linux-amd64 for cosign_version, from the release's cosign_checksums.txt."
   type        = string
+  default     = "424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa"
 
   validation {
     condition     = can(regex("^[0-9a-f]{64}$", var.cosign_sha256))

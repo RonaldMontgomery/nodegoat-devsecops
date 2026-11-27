@@ -43,7 +43,7 @@ flowchart LR
 git clone https://github.com/RonaldMontgomery/nodegoat-devsecops.git
 cd nodegoat-devsecops/infra
 terraform init
-terraform apply -var "cosign_sha256=<sha256 of cosign-linux-amd64>"
+terraform apply   # cosign v3.1.4 SHA-256 is pinned in variables.tf
 terraform output
 ```
 

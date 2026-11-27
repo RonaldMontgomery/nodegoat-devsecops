@@ -97,8 +97,8 @@ resource "aws_iam_instance_profile" "app_host" {
 
 # ---------------------------------------------------------------- host
 
-resource "aws_instance" "app" {
-  #checkov:skip=CKV_AWS_88:Public IP is for outbound traffic only (a NAT gateway would cost more than the course budget); the security group allows no inbound traffic.
+resource "aws_instance" "app" { # nosemgrep: terraform.aws.security.aws-ec2-has-public-ip.aws-ec2-has-public-ip
+  #checkov:skip=CKV_AWS_88:EX-02 in docs/security-exceptions.md. Public IP is for outbound traffic only; the security group allows no inbound traffic.
   #checkov:skip=CKV_AWS_126:Detailed monitoring is a paid add-on; basic monitoring is enough for a demo host.
   ami                         = data.aws_ssm_parameter.ubuntu_ami.value
   instance_type               = var.instance_type
