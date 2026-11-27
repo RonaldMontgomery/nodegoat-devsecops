@@ -1,17 +1,27 @@
-# Stage 1: install production dependencies
-FROM node:22-trixie-slim AS deps
+# Base images: Chainguard node-lts (built on Wolfi). Debian 13 distroless carried 56
+# OS CVEs that Debian marks affected / fix_deferred (no fix available), which the
+# all-severities gate cannot accept. Chainguard rebuilds continuously for near-zero
+# CVEs and signs every image with Cosign; container-security.yml verifies those
+# signatures before building. The free tier only publishes :latest and :latest-dev,
+# which track the newest Node.js LTS.
+# TEMPORARY: unpinned until the first CI build reports the digests, then pinned
+# by digest (Dependabot keeps them current) and these DL3007 ignores are removed.
+
+# Stage 1: install production dependencies (the -dev variant has npm and a shell).
+# hadolint ignore=DL3007
+FROM cgr.dev/chainguard/node-lts:latest-dev AS deps
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY --chown=node:node package*.json ./
 
 # Production dependencies only; no package install scripts run during the build.
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 
-# Stage 2: minimal runtime image (no shell, no package manager)
-# Debian 13: Debian 12 distroless still shipped libssl3 3.0.18 (CVE-2026-31789).
-FROM gcr.io/distroless/nodejs22-debian13:nonroot AS runtime
+# Stage 2: minimal runtime image (no shell, no package manager; entrypoint is node)
+# hadolint ignore=DL3007
+FROM cgr.dev/chainguard/node-lts:latest AS runtime
 
 WORKDIR /app
 

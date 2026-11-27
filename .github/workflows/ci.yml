@@ -30,7 +30,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22'
+          # Same major as the runtime image (Chainguard node-lts tracks the newest LTS).
+          node-version: 'lts/*'
           cache: 'npm'
 
       - name: Install dependencies
