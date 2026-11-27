@@ -66,11 +66,13 @@ const index = (app, db) => {
     app.get("/memos", isLoggedIn, memosHandler.displayMemos);
     app.post("/memos", isLoggedIn, memosHandler.addMemos);
 
-    // Handle redirect for learning resources link
-    app.get("/learn", isLoggedIn, (req, res) => {
-        // Insecure way to handle redirects by taking redirect url from query string
-        return res.redirect(req.query.url);
-    });
+    // Handle redirect for learning resources link.
+    // Fix for A10 - Unvalidated Redirects: the destination used to come from ?url=, so a
+    // link on this host could send a logged-in user anywhere (e.g. a phishing page).
+    // There is one learning resource; redirect to it and ignore the query string.
+    const LEARNING_RESOURCE_URL = "https://www.khanacademy.org/economics-finance-domain/core-finance/" +
+        "investment-vehicles-tutorial/ira-401ks/v/traditional-iras";
+    app.get("/learn", isLoggedIn, (req, res) => res.redirect(LEARNING_RESOURCE_URL));
 
     // Research Page
     app.get("/research", isLoggedIn, researchHandler.displayResearch);
