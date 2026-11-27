@@ -9,23 +9,37 @@ const consolidate = require("consolidate"); // Templating library adapter for Ex
 const swig = require("swig");
 // const helmet = require("helmet");
 const { connect } = require("./app/data/mongo"); // MongoDB driver 7.x connection helper
-const http = require("http");
+const fs = require("fs");
+const https = require("https");
 const marked = require("marked");
 //const nosniff = require('dont-sniff-mimetype');
 const app = express(); // Web framework to handle routing requests
 const routes = require("./app/routes");
-const { port, db, cookieSecret } = require("./config/config"); // Application config properties
-/*
-// Fix for A6-Sensitive Data Exposure
-// Load keys for establishing secure HTTPS connection
-const fs = require("fs");
-const https = require("https");
-const path = require("path");
-const httpsOptions = {
-    key: fs.readFileSync(path.resolve(__dirname, "./artifacts/cert/server.key")),
-    cert: fs.readFileSync(path.resolve(__dirname, "./artifacts/cert/server.crt"))
+const {
+    port,
+    db,
+    cookieSecret,
+    tlsKeyFile,
+    tlsCertFile,
+    sessionMaxAgeMs
+} = require("./config/config"); // Application config properties
+
+// Fix for A6 - Sensitive Data Exposure: serve HTTPS only. The key and certificate are
+// read at startup from files mounted at runtime (see config/env/all.js); without them
+// the app refuses to start rather than falling back to plain HTTP.
+const loadTls = () => {
+    try {
+        return {
+            key: fs.readFileSync(tlsKeyFile),
+            cert: fs.readFileSync(tlsCertFile)
+        };
+    } catch (err) {
+        console.error(`Error: TLS key/certificate not readable (${err.code}): ${tlsKeyFile}, ${tlsCertFile}`);
+        console.error("Run scripts/dev-cert.sh for a local certificate, or set TLS_KEY_FILE and TLS_CERT_FILE.");
+        process.exit(1);
+    }
 };
-*/
+const httpsOptions = loadTls();
 
 connect(db, (err, db) => {
     if (err) {
@@ -74,31 +88,35 @@ connect(db, (err, db) => {
         extended: false
     }));
 
-    // Enable session management using express middleware
+    // Enable session management using express middleware.
+    // Fix for A3/A5: hardened session cookie. Semgrep's express-cookie-settings rules
+    // check each attribute; two are excluded in .github/workflows/sast.yml with reasons:
+    // expiry is set with maxAge (express-session says not to set expires directly), and
+    // no domain is set, which keeps the cookie host-only, stricter than any Domain value.
+    // scripts/smoke-test.sh checks the real Set-Cookie header on every CI run.
     app.use(session({
         // genid: (req) => {
         //    return genuuid() // use UUIDs for session IDs
         //},
         secret: cookieSecret,
+        // Generic name instead of the default "connect.sid", which identifies Express.
+        name: "sessionId",
         // Both mandatory in Express v4
         saveUninitialized: true,
-        resave: true
-        /*
-        // Fix for A5 - Security MisConfig
-        // Use generic cookie name
-        key: "sessionId",
-        */
-
-        /*
-        // Fix for A3 - XSS
-        // TODO: Add "maxAge"
+        resave: true,
+        // Each response extends the idle timeout.
+        rolling: true,
         cookie: {
-            httpOnly: true
-            // Remember to start an HTTPS server to get this working
-            // secure: true
+            // Not readable from page JavaScript (limits session theft through XSS).
+            httpOnly: true,
+            // Sent only over HTTPS; the server below serves nothing else.
+            secure: true,
+            // Not sent on cross-site requests (defence in depth against CSRF).
+            sameSite: "strict",
+            path: "/",
+            // Expires after 30 idle minutes instead of living until the browser closes.
+            maxAge: sessionMaxAgeMs
         }
-        */
-
     }));
 
     /*
@@ -141,17 +159,9 @@ connect(db, (err, db) => {
         */
     });
 
-    // Insecure HTTP connection
-    http.createServer(app).listen(port, () => {
-        console.log(`Express http server listening on port ${port}`);
-    });
-
-    /*
-    // Fix for A6-Sensitive Data Exposure
-    // Use secure HTTPS protocol
+    // Fix for A6 - Sensitive Data Exposure: HTTPS only, no plain-HTTP listener.
     https.createServer(httpsOptions, app).listen(port, () => {
-        console.log(`Express http server listening on port ${port}`);
+        console.log(`Express https server listening on port ${port}`);
     });
-    */
 
 });

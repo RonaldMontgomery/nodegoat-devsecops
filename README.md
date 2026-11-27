@@ -151,11 +151,14 @@ kubectl apply -f k8s/namespace.yaml
 kubectl -n nodegoat create secret generic nodegoat-secrets \
   --from-literal=SESSION_SECRET="$(openssl rand -hex 32)" \
   --from-literal=CRYPTO_KEY="$(openssl rand -hex 32)"
+scripts/dev-cert.sh   # throwaway self-signed certificate in artifacts/cert (git-ignored)
+kubectl -n nodegoat create secret tls nodegoat-tls \
+  --cert=artifacts/cert/tls.crt --key=artifacts/cert/tls.key
 kubectl apply -f k8s/policy.yaml -f k8s/mongo.yaml
 kubectl -n nodegoat rollout status deploy/mongo
 kubectl apply -f k8s/seed-job.yaml && kubectl -n nodegoat wait --for=condition=complete job/nodegoat-seed --timeout=120s
 kubectl apply -f k8s/deployment.yaml
-kubectl -n nodegoat port-forward svc/nodegoat 4000:4000
+kubectl -n nodegoat port-forward svc/nodegoat 4000:4000   # https://localhost:4000
 # Negative test: Kyverno should reject this
 kubectl apply -f k8s/deployment-invalid.yaml
 ```

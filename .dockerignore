@@ -11,6 +11,7 @@ sbom.json
 *.tar.gz
 *.key
 *.pem
+*.crt
 Dockerfile.before
 docker-compose.yml
 infra/

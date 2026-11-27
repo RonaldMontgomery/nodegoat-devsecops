@@ -4,8 +4,11 @@
 # - non-root, read-only root filesystem, all capabilities dropped, no-new-privileges
 # - CPU/memory limits; secrets come from the git-ignored .env file
 #
+# - HTTPS only: the TLS key/certificate are mounted read-only from artifacts/cert
+#
 # Usage:  cp .env.example .env   # fill in values
-#         docker compose up --build
+#         scripts/dev-cert.sh     # throwaway self-signed certificate (git-ignored)
+#         docker compose up --build   # then open https://localhost:4000
 
 name: nodegoat
 
@@ -61,7 +64,12 @@ services:
 
   web:
     image: nodegoat:local
-    environment: *app-env
+    environment:
+      <<: *app-env
+      TLS_KEY_FILE: /run/secrets/tls/tls.key
+      TLS_CERT_FILE: /run/secrets/tls/tls.crt
+    volumes:
+      - ./artifacts/cert:/run/secrets/tls:ro
     depends_on:
       seed:
         condition: service_completed_successfully

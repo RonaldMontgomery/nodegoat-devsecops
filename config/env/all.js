@@ -9,6 +9,7 @@
 //   - cloud: AWS Secrets Manager, injected by the host at startup (planned)
 // In production a missing secret stops startup instead of falling back to a default.
 const crypto = require("crypto");
+const path = require("path");
 
 const port = process.env.PORT || 4000;
 let db = process.env.MONGODB_URI || "mongodb://localhost:27017/nodegoat";
@@ -32,6 +33,15 @@ module.exports = {
     cookieSecret: requiredSecret("SESSION_SECRET"),
     cryptoKey: requiredSecret("CRYPTO_KEY"),
     cryptoAlgo: "aes256",
+    // TLS key and certificate for the HTTPS server (fix for A6). Never stored in the repo:
+    //   - local: scripts/dev-cert.sh writes a throwaway self-signed pair to artifacts/cert/
+    //   - CI: generated per run by scripts/smoke-test.sh
+    //   - Compose: artifacts/cert/ mounted read-only at /run/secrets/tls
+    //   - Kubernetes: the nodegoat-tls Secret mounted at /run/secrets/tls
+    tlsKeyFile: process.env.TLS_KEY_FILE || path.resolve(__dirname, "../../artifacts/cert/tls.key"),
+    tlsCertFile: process.env.TLS_CERT_FILE || path.resolve(__dirname, "../../artifacts/cert/tls.crt"),
+    // Idle session lifetime; each response extends it (rolling sessions).
+    sessionMaxAgeMs: 30 * 60 * 1000,
     hostName: "localhost",
     environmentalScripts: []
 };
