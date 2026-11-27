@@ -21,8 +21,13 @@ jobs:
 
       - name: Test custom rules (positive and negative cases)
         run: |
+          # .semgrepignore excludes .semgrep/ from the main scan (the fixtures are
+          # intentional violations) and semgrep --test honours it, so test a copy
+          # outside the repository.
+          tests="$(mktemp -d)"
+          cp .semgrep/custom-rules.yml .semgrep/custom-rules.js "$tests/"
           status=0
-          semgrep --test .semgrep/ > semgrep-test.log 2>&1 || status=$?
+          (cd "$tests" && semgrep --test .) > semgrep-test.log 2>&1 || status=$?
           cat semgrep-test.log
           # A test run that finds no tests must not pass as green.
           if grep -q "No unit tests found" semgrep-test.log; then

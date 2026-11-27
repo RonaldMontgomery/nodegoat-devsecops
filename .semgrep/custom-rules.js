@@ -1,4 +1,5 @@
-// Test fixtures for .semgrep/custom-rules.yml. Run with: semgrep --test .semgrep/
+// Test fixtures for .semgrep/custom-rules.yml. CI copies both files to a temporary
+// directory and runs `semgrep --test` there (see .github/workflows/sast.yml).
 // These lines are intentional violations; .semgrepignore keeps them out of the main scan.
 /* eslint-disable */
 const session = require("express-session");
