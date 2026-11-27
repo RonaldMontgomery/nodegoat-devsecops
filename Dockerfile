@@ -1,5 +1,5 @@
 # Stage 1: install production dependencies
-FROM node:22-trixie-slim AS deps
+FROM node:25-trixie-slim AS deps
 
 WORKDIR /app
 
