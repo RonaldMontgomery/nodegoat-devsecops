@@ -53,14 +53,17 @@ echo "Secrets written to ${RUN_DIR} (tmpfs)"
 install -d -m 0755 "$APP_DIR/artifacts"
 ln -sfn "$RUN_DIR/cert" "$APP_DIR/artifacts/cert"
 
+# Every compose command interpolates the file, so every one needs the secrets env file.
+compose() { docker compose --env-file "$RUN_DIR/app.env" "$@"; }
+
 echo "== Starting the stack"
 cd "$APP_DIR"
-docker compose --env-file "$RUN_DIR/app.env" up --detach --no-build --remove-orphans
+compose up --detach --no-build --remove-orphans
 
 echo "== Health check (HTTPS, trusting only this deployment's certificate)"
 healthy=0
 for _ in $(seq 1 45); do
-  if curl --fail --silent --show-error --output /dev/null --max-time 5 \
+  if curl --fail --silent --output /dev/null --max-time 5 \
     --cacert "$RUN_DIR/cert/tls.crt" https://localhost:4000/login; then
     healthy=1
     break
@@ -69,13 +72,18 @@ for _ in $(seq 1 45); do
 done
 if [[ "$healthy" != 1 ]]; then
   echo "NodeGoat did not answer on https://localhost:4000/login" >&2
-  docker compose ps --all >&2
-  docker compose logs --tail 40 seed web >&2
+  compose ps --all >&2
+  compose logs --tail 40 seed web >&2
   exit 1
 fi
 
 want="$(docker image inspect --format '{{.Id}}' "$REF")"
-got="$(docker inspect --format '{{.Image}}' "$(docker compose ps --quiet web)")"
+web_id="$(compose ps --quiet web)"
+if [[ -z "$web_id" ]]; then
+  echo "No running web container" >&2
+  exit 1
+fi
+got="$(docker inspect --format '{{.Image}}' "$web_id")"
 if [[ "$want" != "$got" ]]; then
   echo "Running image ${got} is not the verified image ${want}" >&2
   exit 1
