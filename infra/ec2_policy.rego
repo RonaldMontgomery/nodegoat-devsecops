@@ -37,7 +37,8 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	some rc in changed("aws_security_group")
+	some type in {"aws_security_group", "aws_default_security_group"}
+	some rc in changed(type)
 	count(object.get(rc.change.after, "ingress", [])) > 0
 	msg := sprintf("%s must not allow inbound traffic", [rc.address])
 }

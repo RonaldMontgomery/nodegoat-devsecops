@@ -24,7 +24,7 @@ flowchart LR
 | GitHub can run one SSM document, with one parameter (`^sha256:[a-f0-9]{64}$`), on one instance | `infra/deploy.tf`: `aws_ssm_document.deploy`, `aws_iam_role_policy.github_deploy` |
 | The deploy role trusts only this repository's `production` environment (by numeric owner and repository IDs) | `infra/deploy.tf`: `aws_iam_role.github_deploy` |
 | No long-lived AWS keys in GitHub; no credentials in pull request jobs | OIDC; job runs only after `publish-sign`, which runs only on `main` |
-| No inbound traffic, no SSH key | security group with egress 80/443 only; OPA `terraform.ec2` policy |
+| No inbound traffic, no SSH key | dedicated VPC (`10.42.0.0/24`) whose default security group has no rules; host security group with egress 80/443 only; OPA `terraform.ec2` policy |
 | IMDSv2 with hop limit 1, so containers cannot reach instance credentials (defence in depth behind the SSRF fix) | `metadata_options`; OPA `terraform.ec2` policy |
 | Secrets read at deploy time from Secrets Manager, written only to tmpfs (`/run/nodegoat`), gone on reboot | `scripts/deploy-host.sh`; host role can read only `nodegoat/*` |
 | Encrypted root volume; Ubuntu unattended security upgrades (on by default) | `infra/deploy.tf` |
