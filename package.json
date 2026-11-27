@@ -14,6 +14,7 @@
     "marked": "^18.3.0",
     "mongodb": "^7.8.0",
     "needle": "2.2.4",
+    "nunjucks": "^3.2.4",
     "serve-favicon": "^2.3.0",
     "underscore": "^1.13.8"
   },
