@@ -253,6 +253,61 @@ out="$(req --data "userName=user1&password=User1_123" "${BASE}/login")"
 [ "${out%% *}" = "403" ] || fail "A8: POST /login without a CSRF token returned ${out}, expected 403 (login CSRF)"
 echo "ok - A8 POST /login without a token is refused (403): login CSRF"
 
+# --- A7 function-level access control: /benefits is for administrators -------
+# Any logged-in user could list every user's benefits and change their start dates.
+login user1 User1_123 /dashboard
+out="$(req "${BASE}/benefits")"
+if grep -qF "Will" "$BODY"; then fail "A7: user1 can see the benefits list (${out})"; fi
+[ "${out%% *}" = "403" ] || fail "A7: user1 GET /benefits returned ${out}, expected 403"
+t="$(token /memos)"
+out="$(req --data-urlencode "_csrf=$t" --data "userId=3&benefitStartDate=2099-12-31" "${BASE}/benefits")"
+[ "${out%% *}" = "403" ] || fail "A7: user1 POST /benefits (with a valid CSRF token) returned ${out}, expected 403"
+login admin Admin_123 /benefits
+expect_page /benefits "Will"
+if grep -qF "2099-12-31" "$BODY"; then fail "A7: user1 changed another user's benefit date"; fi
+echo "ok - A7 a non-admin cannot view or change /benefits (403); admin still can"
+
+# --- A2 broken authentication ------------------------------------------------
+# The login page must not reveal whether a user name exists.
+rm -f "$JAR"
+t="$(token /login)"
+req --data-urlencode "_csrf=$t" --data "userName=user1&password=wrong-password" "${BASE}/login" > /dev/null
+wrong_password="$(grep -o 'Invalid[^<]*' "$BODY" | head -n 1)"
+t="$(token /login)"
+req --data-urlencode "_csrf=$t" --data "userName=no-such-user-$$&password=wrong-password" "${BASE}/login" > /dev/null
+no_such_user="$(grep -o 'Invalid[^<]*' "$BODY" | head -n 1)"
+[ -n "$wrong_password" ] && [ "$wrong_password" = "$no_such_user" ] \
+  || fail "A2: login errors differ: wrong password='${wrong_password}', unknown user='${no_such_user}'"
+echo "ok - A2 wrong password and unknown user get the same message: ${wrong_password}"
+
+# Session fixation: logging in must issue a new session id.
+rm -f "$JAR"
+req "${BASE}/login" > /dev/null
+before="$(awk '$6 == "sessionId" {print $7}' "$JAR")"
+login_keep_jar() {
+  local t; t="$(sed -n 's/.*name="_csrf" value="\([^"]*\)".*/\1/p' "$BODY" | head -n 1)"
+  req --data-urlencode "_csrf=$t" --data "userName=$1&password=$2" "${BASE}/login" > /dev/null
+}
+login_keep_jar user1 User1_123
+after="$(awk '$6 == "sessionId" {print $7}' "$JAR")"
+[ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ] \
+  || fail "A2: session id was not regenerated at login (before=${before:0:12}…, after=${after:0:12}…)"
+echo "ok - A2 login issues a new session id (no session fixation)"
+
+# Passwords must be stored as salted hashes, never in plaintext.
+node -e '
+  const { MongoClient } = require("mongodb");
+  (async () => {
+    const client = await MongoClient.connect(process.env.MONGODB_URI);
+    const users = await client.db().collection("users").find({}, { projection: { userName: 1, password: 1 } }).toArray();
+    await client.close();
+    const plain = ["Admin_123", "User1_123", "User2_123", "Smoke_Pass1"];
+    const bad = users.filter(u => plain.includes(u.password) || !/^scrypt\$/.test(String(u.password)));
+    if (bad.length) { console.error("plaintext or unhashed passwords: " + bad.map(u => u.userName).join(", ")); process.exit(1); }
+    console.log("ok - A2 all " + users.length + " stored passwords are scrypt hashes");
+  })().catch(e => { console.error(e.message); process.exit(1); });
+' || fail "A2: passwords are stored in plaintext"
+
 # --- A10 open redirect: /learn ---------------------------------------------
 # /learn used to redirect to any ?url=, so a link on the trusted host could send a
 # logged-in user to a phishing page. It must only ever go to the learning resource.
