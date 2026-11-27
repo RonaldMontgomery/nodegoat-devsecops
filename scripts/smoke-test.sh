@@ -4,7 +4,14 @@
 set -euo pipefail
 
 PORT="${PORT:-4000}"
-BASE="http://127.0.0.1:${PORT}"
+BASE="https://127.0.0.1:${PORT}"
+TMP="${RUNNER_TEMP:-/tmp}"
+
+# Per-run self-signed certificate (fix for A6: the app serves HTTPS only). curl trusts
+# exactly this certificate, so a TLS or hostname error fails the test; no --insecure.
+bash scripts/dev-cert.sh "$TMP/tls" > /dev/null
+export TLS_KEY_FILE="$TMP/tls/tls.key" TLS_CERT_FILE="$TMP/tls/tls.crt"
+export CURL_CA_BUNDLE="$TLS_CERT_FILE"
 export NODE_ENV=production
 # Throwaway per-run secrets: never stored, never reused.
 SESSION_SECRET="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))')"
@@ -13,7 +20,7 @@ export SESSION_SECRET CRYPTO_KEY
 
 node artifacts/db-reset.js
 
-node server.js > "${RUNNER_TEMP:-/tmp}/nodegoat.log" 2>&1 &
+node server.js > "$TMP/nodegoat.log" 2>&1 &
 APP_PID=$!
 trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
 
@@ -22,7 +29,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-fail() { echo "SMOKE FAIL: $*"; cat "${RUNNER_TEMP:-/tmp}/nodegoat.log"; exit 1; }
+fail() { echo "SMOKE FAIL: $*"; cat "$TMP/nodegoat.log"; exit 1; }
 
 code="$(curl --silent --output /dev/null --write-out '%{http_code}' "${BASE}/login")"
 [ "$code" = "200" ] || fail "GET /login returned $code, expected 200"
@@ -37,7 +44,7 @@ for path in /dashboard /profile /contributions /memos; do
 done
 
 # Secrets must not appear in the application log.
-if grep -qF "$SESSION_SECRET" "${RUNNER_TEMP:-/tmp}/nodegoat.log"; then
+if grep -qF "$SESSION_SECRET" "$TMP/nodegoat.log"; then
   fail "SESSION_SECRET found in application log"
 fi
 echo "ok - secrets not present in application log"
@@ -46,14 +53,15 @@ echo "ok - secrets not present in application log"
 # Exercise every DAO through the real MongoDB driver: login, reads, upserts,
 # inserts and sign-up (which uses the counters collection). These would fail if
 # any driver call were left on a pre-5.0 callback or removed 2.x method.
-TMP="${RUNNER_TEMP:-/tmp}"
 JAR="$TMP/smoke-cookies.txt"
 BODY="$TMP/smoke-body.html"
+HEADERS="$TMP/smoke-headers.txt"
 rm -f "$JAR"
 
-# req <curl args...>  -> prints "<status> <redirect-url>", body saved to $BODY
+# req <curl args...>  -> prints "<status> <redirect-url>", body saved to $BODY,
+# response headers to $HEADERS
 req() { curl --silent --cookie "$JAR" --cookie-jar "$JAR" --output "$BODY" \
-  --write-out '%{http_code} %{redirect_url}' "$@"; }
+  --dump-header "$HEADERS" --write-out '%{http_code} %{redirect_url}' "$@"; }
 expect_page() { # expect_page <path> <text that must appear>
   local out; out="$(req "${BASE}$1")"
   [ "${out%% *}" = "200" ] || fail "GET $1 returned ${out}"
@@ -68,6 +76,22 @@ login() { # login <user> <password> <expected redirect path>
 }
 
 login user1 User1_123 /dashboard
+
+# --- A3/A5/A6 session cookie and transport -----------------------------------
+cookie="$(grep -i '^set-cookie: sessionId=' "$HEADERS" | tail -n 1 | tr -d '\r')"
+[ -n "$cookie" ] || fail "login did not set a sessionId cookie: $(grep -i '^set-cookie' "$HEADERS")"
+if grep -qi '^set-cookie: connect\.sid=' "$HEADERS"; then fail "default connect.sid cookie name still used"; fi
+for attr in "; Path=/" "; Expires=" "; HttpOnly" "; Secure" "; SameSite=Strict"; do
+  [[ "$cookie" == *"$attr"* ]] || fail "session cookie is missing '${attr#; }': ${cookie}"
+done
+[[ "$cookie" != *"; Domain="* ]] || fail "session cookie should be host-only (no Domain): ${cookie}"
+echo "ok - session cookie is sessionId with HttpOnly, Secure, SameSite=Strict, Path=/, Expires, no Domain"
+
+code="$(curl --silent --max-time 5 --output /dev/null --write-out '%{http_code}' \
+  "http://127.0.0.1:${PORT}/login" || true)"
+[ "$code" = "000" ] || fail "plain HTTP request got an HTTP ${code} response; expected no HTTP listener"
+echo "ok - plain HTTP is not served (TLS only)"
+
 expect_page /dashboard "John Doe"
 expect_page /profile "Doe"
 expect_page /allocations/2 "Asset Allocations for John Doe"

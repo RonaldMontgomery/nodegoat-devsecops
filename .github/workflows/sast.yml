@@ -22,5 +22,17 @@ jobs:
       - name: Test custom rules (positive and negative cases)
         run: semgrep --test .semgrep/
 
+      # Documented false positives (excluded by rule id, not by file):
+      # - express-cookie-session-no-expires: the session cookie expires through maxAge.
+      #   express-session documents that `expires` should not be set directly; maxAge
+      #   produces the Expires attribute per session. The rule only recognises `expires`.
+      # - express-cookie-session-no-domain: no Domain attribute keeps the cookie host-only,
+      #   which is stricter than any Domain value (a Domain also covers subdomains).
+      # scripts/smoke-test.sh asserts the real Set-Cookie header (Expires present, no
+      # Domain, plus HttpOnly, Secure, SameSite=Strict, Path=/) on every CI run.
       - name: Run Semgrep
-        run: semgrep --config auto --config .semgrep/custom-rules.yml --error .
+        run: >-
+          semgrep --config auto --config .semgrep/custom-rules.yml --error
+          --exclude-rule javascript.express.security.audit.express-cookie-settings.express-cookie-session-no-expires
+          --exclude-rule javascript.express.security.audit.express-cookie-settings.express-cookie-session-no-domain
+          .

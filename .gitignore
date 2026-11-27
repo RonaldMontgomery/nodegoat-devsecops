@@ -35,6 +35,7 @@ test/e2e/videos/
 !.env.example
 *.key
 *.pem
+*.crt
 
 # Pipeline output
 sbom.json
