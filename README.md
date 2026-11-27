@@ -101,14 +101,14 @@ Upstream's `e2e-test.yml` (Cypress on Node 10–14) and `lint.yml` were removed.
 
 | Upstream | This repo |
 |---|---|
-| `node:12-alpine` (EOL), copies the entire repo, `npm install` | Chainguard `node-lts:latest-dev` deps stage with `npm ci --omit=dev --ignore-scripts`; Chainguard `node-lts:latest` runtime (Wolfi, Cosign-verified in CI). Earlier: distroless Debian 12 → 13, then off Debian because Debian 13 had 56 OS CVEs with no fix available |
+| `node:12-alpine` (EOL), copies the entire repo, `npm install` | Chainguard `node:latest-dev` deps stage with `npm ci --omit=dev --ignore-scripts`; Chainguard `node:latest` runtime (Wolfi, Cosign-verified in CI). Earlier: distroless Debian 12 → 13, then off Debian because Debian 13 had 56 OS CVEs with no fix available |
 | Named user `node` | Numeric `USER 65532` (avoids Hadolint DL3066, as in my-app) |
 | No `CMD`; dev defaults | `NODE_ENV=production`, so missing secrets stop the container |
 | Whole build context | Explicit `COPY` of `server.js`, `app/`, `config/`, `artifacts/db-reset.js`; `.dockerignore` drops tests, infra, policy, CI, secrets |
 
 Hadolint 2.14.0 reports no findings on this Dockerfile.
 
-The runtime follows the newest Node.js LTS (Chainguard `node-lts`), and CI tests on the same line (`lts/*`). Node 22 was used until the 2016-era dependencies were upgraded or replaced; the CI smoke test and the container start-up test check the app on the new runtime.
+The runtime follows the newest Node.js release (Chainguard's free `node:latest`; `node-lts` needs a paid account), and CI tests on the same line (`current`). Node 22 was used until the 2016-era dependencies were upgraded or replaced; the CI smoke test and the container start-up test check the app on the new runtime.
 
 `docker-compose.yml` is hardened for the EC2 target:
 

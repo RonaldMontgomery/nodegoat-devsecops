@@ -1,15 +1,16 @@
-# Base images: Chainguard node-lts (built on Wolfi). Debian 13 distroless carried 56
+# Base images: Chainguard node (built on Wolfi). Debian 13 distroless carried 56
 # OS CVEs that Debian marks affected / fix_deferred (no fix available), which the
 # all-severities gate cannot accept. Chainguard rebuilds continuously for near-zero
 # CVEs and signs every image with Cosign; container-security.yml verifies those
-# signatures before building. The free tier only publishes :latest and :latest-dev,
-# which track the newest Node.js LTS.
+# signatures before building. The free tier only publishes :latest and :latest-dev
+# of the plain node image (node-lts needs a paid account), which track the newest
+# Node.js release; CI tests on the same "current" line.
 # TEMPORARY: unpinned until the first CI build reports the digests, then pinned
 # by digest (Dependabot keeps them current) and these DL3007 ignores are removed.
 
 # Stage 1: install production dependencies (the -dev variant has npm and a shell).
 # hadolint ignore=DL3007
-FROM cgr.dev/chainguard/node-lts:latest-dev AS deps
+FROM cgr.dev/chainguard/node:latest-dev AS deps
 
 WORKDIR /app
 
@@ -21,7 +22,7 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # Stage 2: minimal runtime image (no shell, no package manager; entrypoint is node)
 # hadolint ignore=DL3007
-FROM cgr.dev/chainguard/node-lts:latest AS runtime
+FROM cgr.dev/chainguard/node:latest AS runtime
 
 WORKDIR /app
 
