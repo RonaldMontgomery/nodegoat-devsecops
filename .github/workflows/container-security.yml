@@ -16,7 +16,7 @@ jobs:
     # Disposable MongoDB so the built image can be started and tested, not only scanned.
     services:
       mongo:
-        image: mongo:4.4
+        image: mongo:8.0
         ports:
           - 127.0.0.1:27017:27017
 
@@ -108,12 +108,14 @@ jobs:
             --exit-code 1 \
             nodegoat:${{ github.sha }}
 
-      # The official MongoDB images cannot meet that standard (OS packages plus old Go
-      # toolchains in the bundled tools and gosu), so this reports but does not block
-      # while the replacement is decided. Tracked in the evidence log.
-      - name: Report MongoDB image vulnerabilities (non-blocking, tracked)
+      # Documented exception EX-01 (docs/security-exceptions.md): the official MongoDB
+      # image is third-party and cannot meet the every-severity standard (Ubuntu
+      # packages with no fix, plus old Go toolchains in its bundled tools and gosu).
+      # It is scanned on every run and reported, but does not block. The exception
+      # does not cover anything this repository builds, signs or deploys.
+      - name: Report MongoDB image vulnerabilities (exception EX-01, non-blocking)
         run: |
-          trivy image --scanners vuln --exit-code 0 mongo:4.4
+          trivy image --scanners vuln --exit-code 0 mongo:8.0
 
   # Each scanner is its own workflow, so "needs:" cannot see them. Before anything is
   # published or signed, wait for the other required checks on this same commit and

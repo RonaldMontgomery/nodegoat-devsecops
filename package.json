@@ -29,7 +29,7 @@
     "lint": "eslint .",
     "db:seed": "cross-env NODE_ENV=test node artifacts/db-reset.js",
     "precommit": "npm run lint",
-    "docker-mongo": "docker run -p 127.0.0.1:27017:27017 --name mongo mongo:4.4",
+    "docker-mongo": "docker run -p 127.0.0.1:27017:27017 --name mongo mongo:8.0",
     "start-infra": "docker-compose up",
     "stop-infra": "docker-compose down"
   },

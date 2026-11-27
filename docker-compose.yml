@@ -14,7 +14,10 @@ name: nodegoat
 
 services:
   mongo:
-    image: mongo:4.4
+    image: mongo:8.0
+    # Cap the WiredTiger cache so mongod stays inside the 512M memory limit
+    # (by default it sizes the cache from the host's RAM, not the container's).
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
     user: "999:999"
     expose:
       - "27017"
@@ -30,7 +33,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "mongo", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 5s
       timeout: 5s
       retries: 12

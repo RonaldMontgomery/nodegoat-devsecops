@@ -63,7 +63,7 @@ Gitleaks did not flag the hard-coded `cookieSecret` and `cryptoKey` in `config/e
 
 ## Lab 3: CI
 
-`build-test` runs on every push and on PRs to `main`, with a disposable `mongo:4.4` service container:
+`build-test` runs on every push and on PRs to `main`, with a disposable `mongo:8.0` service container:
 
 1. `npm ci` (upstream Grunt, Cypress 3, Mocha/Selenium/ZAP and `forever` tooling removed; see the dependency cleanup PR)
 2. `npm run lint`: ESLint with [eslint.config.js](eslint.config.js) (replaced upstream jshint and its unpinned `lint.yml`)
@@ -120,7 +120,7 @@ The runtime follows the newest Node.js release (Chainguard's free `node:latest`;
 
 `container-security.yml` is my-app's workflow with the image renamed. On `main` (or a manual run) the `publish-sign` job rebuilds and rescans the image, pushes `ghcr.io/<owner>/<repo>:<sha>`, resolves the immutable digest, signs it with Cosign keyless (GitHub OIDC), and attaches a GitHub build-provenance attestation. A separate `verify` job checks `gh attestation verify --signer-workflow` and `cosign verify` against the exact workflow identity on `refs/heads/main` before the placeholder `deploy` job.
 
-A non-blocking Trivy report for `mongo:4.4` was added. 4.4 is end-of-life, but the mongodb 2.x driver can't talk to a supported server yet.
+MongoDB runs `mongo:8.0` (4.4 was end-of-life; possible once the driver was ported to 7.x). Its image is scanned on every run but does not block: see exception EX-01 in [docs/security-exceptions.md](docs/security-exceptions.md).
 
 **Expected state:** the image includes NodeGoat's production dependencies, so the Critical gate is expected to fail, and publishing and signing are skipped until the dependency work lands.
 

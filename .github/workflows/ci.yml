@@ -16,7 +16,7 @@ jobs:
     # Disposable MongoDB for the smoke test (synthetic seed data only).
     services:
       mongo:
-        image: mongo:4.4
+        image: mongo:8.0
         ports:
           - 127.0.0.1:27017:27017
 

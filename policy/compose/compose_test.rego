@@ -18,7 +18,7 @@ test_hardened_app_allowed if {
 }
 
 test_published_db_port_denied if {
-	compose.deny["database service mongo must not publish ports"] with input as {"services": {"mongo": {"image": "mongo:4.4", "ports": ["127.0.0.1:27017:27017"]}}}
+	compose.deny["database service mongo must not publish ports"] with input as {"services": {"mongo": {"image": "mongo:8.0", "ports": ["127.0.0.1:27017:27017"]}}}
 }
 
 test_public_port_denied if {
