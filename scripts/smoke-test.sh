@@ -387,7 +387,7 @@ node -e '
     if (bad.length) { console.log("plaintext at rest: " + bad.join(", ")); process.exit(1); }
   })().catch(e => { console.log(e.message); process.exit(1); });
 ' > "$TMP/a6.txt" || finding "A6: $(cat "$TMP/a6.txt")"
-grep -q "^A6" <<< "${findings[*]:-}" || echo "ok - A6 SSN, DOB and bank details are encrypted at rest and shown to the owner"
+[[ " ${findings[*]:-} " == *" A6:"* ]] || echo "ok - A6 SSN, DOB and bank details are encrypted at rest and shown to the owner"
 
 # ReDoS: the bank routing check /([0-9]+)+\#/ backtracks exponentially on a long run of
 # digits without the '#', freezing the single Node.js thread. Runs last: on vulnerable
