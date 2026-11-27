@@ -30,9 +30,15 @@ jobs:
       #   which is stricter than any Domain value (a Domain also covers subdomains).
       # scripts/smoke-test.sh asserts the real Set-Cookie header (Expires present, no
       # Domain, plus HttpOnly, Secure, SameSite=Strict, Path=/) on every CI run.
+      # - django-no-csrf-token: a Django rule applied to every *.html file. It looks for
+      #   Django's {% csrf_token %} tag, which does not exist in Swig. NodeGoat's forms
+      #   carry csurf's token as a hidden _csrf field (the rule flagged login.html even
+      #   though it had one). scripts/smoke-test.sh proves the real control: forged POSTs
+      #   without a token or with a wrong one get 403 and change nothing.
       - name: Run Semgrep
         run: >-
           semgrep --config auto --config .semgrep/custom-rules.yml --error
           --exclude-rule javascript.express.security.audit.express-cookie-settings.express-cookie-session-no-expires
           --exclude-rule javascript.express.security.audit.express-cookie-settings.express-cookie-session-no-domain
+          --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token
           .
