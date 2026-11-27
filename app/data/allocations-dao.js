@@ -53,32 +53,38 @@ const AllocationsDAO = function(db){
         });
     };
 
+    // Fix for A1 - 2 NoSQL Injection. The threshold used to be pasted into a $where
+    // JavaScript string, so "1'; return 1 == '1" returned every user's allocations and
+    // "0';while(true){}'" hung the database. It is now validated as a whole number from
+    // 0 to 99 and used in a typed comparison; no server-side JavaScript runs.
+    // Objects and arrays (e.g. ?threshold[$gt]=0) fail the string check.
+    const THRESHOLD_RE = /^\d{1,2}$/;
+
+    const invalidThreshold = () => {
+        // Do not echo the input: allocations.html renders this with autoescape off.
+        const err = new Error("Threshold must be a whole number from 0 to 99.");
+        err.invalidThreshold = true;
+        return err;
+    };
+
     this.getByUserIdAndThreshold = (userId, threshold, callback) => {
         const parsedUserId = parseInt(userId);
+        const hasThreshold = threshold !== undefined && threshold !== "";
 
         const searchCriteria = () => {
-
-            if (threshold) {
-                /*
-                // Fix for A1 - 2 NoSQL Injection - escape the threshold parameter properly
-                // Fix this NoSQL Injection which doesn't sanitze the input parameter 'threshold' and allows attackers
-                // to inject arbitrary javascript code into the NoSQL query:
-                // 1. 0';while(true){}'
-                // 2. 1'; return 1 == '1
-                // Also implement fix in allocations.html for UX.                             
-                const parsedThreshold = parseInt(threshold, 10);
-                
-                if (parsedThreshold >= 0 && parsedThreshold <= 99) {
-                    return {$where: `this.userId == ${parsedUserId} && this.stocks > ${parsedThreshold}`};
-                }
-                throw `The user supplied threshold: ${parsedThreshold} was not valid.`;
-                */
+            if (!hasThreshold) {
                 return {
-                    $where: `this.userId == ${parsedUserId} && this.stocks > '${threshold}'`
+                    userId: parsedUserId
                 };
             }
+            if (typeof threshold !== "string" || !THRESHOLD_RE.test(threshold)) {
+                throw invalidThreshold();
+            }
             return {
-                userId: parsedUserId
+                userId: parsedUserId,
+                stocks: {
+                    $gt: parseInt(threshold, 10)
+                }
             };
         };
 
@@ -88,8 +94,13 @@ const AllocationsDAO = function(db){
             userDAO.getUserById(id, (err, user) => err ? reject(err) : resolve(user));
         });
 
-        const userAllocations = allocationsCol.find(searchCriteria()).toArray().then(allocations => {
-            if (!allocations.length) throw "ERROR: No allocations found for the user";
+        // Running searchCriteria() inside then() turns a rejected threshold into a
+        // rejected promise, so no query is sent to MongoDB.
+        const findAllocations = () => allocationsCol.find(searchCriteria()).toArray();
+
+        const userAllocations = Promise.resolve().then(findAllocations).then(allocations => {
+            // A threshold that matches nothing is an empty result, not an error.
+            if (!allocations.length && !hasThreshold) throw "ERROR: No allocations found for the user";
 
             return Promise.all(allocations.map(alloc => findUser(alloc.userId).then(user => {
                 alloc.userName = user.userName;
