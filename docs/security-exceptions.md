@@ -33,6 +33,17 @@ Current status of that standard:
 | **Exit condition** | Move to a hardened MongoDB image that can be pulled without credentials, or pull one only in `main`-branch jobs, and make the scan blocking. |
 | **Review** | By 2026-12-16 (final report), then with every MongoDB image update. |
 
+## EX-02: the EC2 host has a public IP address
+
+| | |
+|---|---|
+| **Scope** | `aws_instance.app` in `infra/deploy.tf` only, suppressed inline on that resource (Semgrep `aws-ec2-has-public-ip`, Checkov `CKV_AWS_88`). The rules still apply to every other resource. |
+| **Why** | The host must reach GHCR (image), Sigstore (signature check), SSM and Secrets Manager. Without a public address that needs a NAT gateway (about $33/month) or four VPC interface endpoints (about $29/month) plus a NAT for GHCR and Sigstore anyway, which exceeds the course's $20/month budget. |
+| **Compensating controls** | The security group has **no ingress rules** (egress 80/443 only) and the instance has **no SSH key pair**; both are enforced by the OPA policy `terraform.ec2` (`infra/ec2_policy.rego`, 12 unit tests in CI). The app binds to `127.0.0.1:4000` and MongoDB to an internal Docker network (Conftest `policy/compose`). Administration and the demo go through SSM Session Manager (IAM-authenticated, logged). IMDSv2 with hop limit 1. |
+| **Residual risk** | The address is visible to internet scanners, which find no open port. Outbound traffic is not restricted by destination. |
+| **Exit condition** | A private subnet with a NAT gateway or a GHCR pull-through cache, if the deployment outlives the course budget. |
+| **Review** | By 2026-12-16 (final report). |
+
 ## Static analysis (Semgrep) rule exclusions
 
 Excluded by rule id in `.github/workflows/sast.yml`; every other rule still blocks.

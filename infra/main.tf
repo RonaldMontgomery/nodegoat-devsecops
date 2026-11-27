@@ -1,6 +1,6 @@
 # Pipeline evidence bucket for NodeGoat (threat T8: keep scan reports, SBOMs and
-# provenance traceable to a commit). Same baseline as Lab 7; EC2 host resources
-# for the Compose deployment are the next addition.
+# provenance traceable to a commit). Same baseline as Lab 7. The EC2 host for the
+# Compose deployment is in deploy.tf.
 
 provider "aws" {
   region = var.aws_region
