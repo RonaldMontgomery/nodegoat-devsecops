@@ -335,10 +335,91 @@ jobs:
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
   deploy:
-    name: Deploy
+    name: Deploy to EC2
     needs: [publish-sign, verify]
+    # Skipped until the host and deploy role exist (repository variables are set from
+    # `terraform output` in infra/). The production environment is what the AWS role
+    # trusts, so no other workflow, branch or pull request can assume it.
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.DEPLOY_INSTANCE_ID != '' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      DIGEST: ${{ needs.publish-sign.outputs.digest }}
+      INSTANCE_ID: ${{ vars.DEPLOY_INSTANCE_ID }}
 
     steps:
-      - name: Deploy (placeholder)
-        run: echo "Would deploy ${{ needs.publish-sign.outputs.image-repo }}@${{ needs.publish-sign.outputs.digest }}"
+      - name: Show OIDC subject and audience
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const claims = JSON.parse(
+              Buffer.from(token.split('.')[1], 'base64url').toString()
+            );
+            core.info(`Subject: ${claims.sub}`);
+            core.info(`Audience: ${claims.aud}`);
+
+      - name: Configure AWS credentials via OIDC (deploy role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Check that the host is online
+        id: host
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(aws ssm describe-instance-information \
+            --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+            --query 'InstanceInformationList[0].PingStatus' --output text)"
+          if [ "$status" = "Online" ]; then
+            echo "online=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "online=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Host ${INSTANCE_ID} is not online (${status}); ${DIGEST} was signed and verified but not deployed. Start the instance and re-run this job."
+          fi
+
+      - name: Deploy the verified digest through SSM
+        if: steps.host.outputs.online == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          command_id="$(aws ssm send-command \
+            --document-name nodegoat-deploy \
+            --instance-ids "$INSTANCE_ID" \
+            --parameters "digest=${DIGEST}" \
+            --comment "deploy ${GITHUB_SHA::7}" \
+            --query Command.CommandId --output text)"
+          echo "SSM command: ${command_id}"
+
+          # Polls every 5 s for up to about 8 minutes; the result is checked below either way.
+          aws ssm wait command-executed --command-id "$command_id" --instance-id "$INSTANCE_ID" || true
+
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" \
+            --output json > invocation.json
+          jq -r '.StandardOutputContent' invocation.json
+          jq -r '.StandardErrorContent' invocation.json >&2
+          status="$(jq -r '.Status' invocation.json)"
+
+          if [ "$status" != "Success" ]; then
+            echo "::error::Deployment ${status}"
+            exit 1
+          fi
+          if ! jq -r '.StandardOutputContent' invocation.json | grep -qx "DEPLOYED ghcr.io/.*@${DIGEST}"; then
+            echo "::error::The host did not confirm ${DIGEST}"
+            exit 1
+          fi
+
+          {
+            echo "### Deployed to EC2"
+            echo "- Instance: \`${INSTANCE_ID}\`"
+            echo "- Image: \`${DIGEST}\` (signature verified in CI and again on the host)"
+            echo "- SSM command: \`${command_id}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

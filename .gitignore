@@ -44,3 +44,4 @@ tfplan
 tfplan.json
 infra/.terraform/
 infra/*.tfstate*
+infra/*.tfvars
