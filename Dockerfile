@@ -1,5 +1,5 @@
 # Stage 1: install production dependencies
-FROM node:22-bookworm-slim AS deps
+FROM node:22-trixie-slim AS deps
 
 WORKDIR /app
 
@@ -10,7 +10,8 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 
 # Stage 2: minimal runtime image (no shell, no package manager)
-FROM gcr.io/distroless/nodejs22-debian12:nonroot AS runtime
+# Debian 13: Debian 12 distroless still shipped libssl3 3.0.18 (CVE-2026-31789).
+FROM gcr.io/distroless/nodejs22-debian13:nonroot AS runtime
 
 WORKDIR /app
 
