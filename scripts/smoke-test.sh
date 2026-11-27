@@ -308,6 +308,37 @@ node -e '
   })().catch(e => { console.error(e.message); process.exit(1); });
 ' || fail "A2: passwords are stored in plaintext"
 
+# --- Logout CSRF: ending a session needs a POST with the token ---------------
+# GET /logout used to destroy the session, so any page (even an <img> tag on another
+# site) could log a user out.
+login user1 User1_123 /dashboard
+req "${BASE}/logout" > /dev/null
+out="$(req "${BASE}/dashboard")"
+[ "${out%% *}" = "200" ] || fail "logout CSRF: GET /logout ended the session (dashboard now ${out})"
+echo "ok - GET /logout does not end the session"
+out="$(req --data "" "${BASE}/logout")"
+[ "${out%% *}" = "403" ] || fail "logout CSRF: POST /logout without a token returned ${out}, expected 403"
+out="$(req "${BASE}/dashboard")"
+[ "${out%% *}" = "200" ] || fail "logout CSRF: tokenless POST /logout ended the session"
+echo "ok - POST /logout without a CSRF token is refused (403)"
+t="$(token /dashboard)"
+[ -n "$t" ] || fail "logout: no CSRF token on the dashboard's logout form"
+out="$(req --data-urlencode "_csrf=$t" "${BASE}/logout")"
+[ "${out%% *}" = "302" ] || fail "logout: POST /logout with the token returned ${out}"
+out="$(req "${BASE}/dashboard")"
+[[ "$out" == "302 "*/login ]] || fail "logout: session still valid after POST /logout (${out})"
+echo "ok - POST /logout with the token ends the session"
+
+# Sign-up regenerates the session; the logout form on the page it renders must work.
+rm -f "$JAR"
+t="$(token /signup)"
+req --data-urlencode "_csrf=$t" --data "userName=logout$$&firstName=Log&lastName=Out&password=Logout_Pass1&verify=Logout_Pass1" \
+  "${BASE}/signup" > /dev/null
+t="$(sed -n 's/.*name="_csrf" value="\([^"]*\)".*/\1/p' "$BODY" | head -n 1)"
+out="$(req --data-urlencode "_csrf=$t" "${BASE}/logout")"
+[ "${out%% *}" = "302" ] || fail "logout: the logout form rendered right after sign-up was refused (${out})"
+echo "ok - the logout form rendered right after sign-up works"
+
 # --- A10 open redirect: /learn ---------------------------------------------
 # /learn used to redirect to any ?url=, so a link on the trusted host could send a
 # logged-in user to a phishing page. It must only ever go to the learning resource.
