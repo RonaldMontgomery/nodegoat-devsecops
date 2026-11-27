@@ -61,9 +61,69 @@ jobs:
             --exit-code 0 \
             mongo:4.4
 
+  # Each scanner is its own workflow, so "needs:" cannot see them. Before anything is
+  # published or signed, wait for the other required checks on this same commit and
+  # stop unless every one of them passed (midterm requirement: only digests that pass
+  # all checks are released).
+  release-gate:
+    name: Release Gate
+    needs: container-security
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    permissions:
+      checks: read
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # Check-run (job) names from ci.yml, sast.yml, sca.yml, secret-scan.yml, action-pinning.yml.
+      REQUIRED_CHECKS: "build-test|Semgrep SAST|sca|Gitleaks|Enforce Action SHA Pins"
+
+    steps:
+      - name: Wait for all required checks on this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS='|' read -r -a required <<< "$REQUIRED_CHECKS"
+
+          for attempt in $(seq 1 80); do
+            # filter=latest keeps only the newest run of each check name.
+            runs="$(gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?filter=latest&per_page=100" \
+              --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"')"
+
+            pending=0
+            failed=0
+            for name in "${required[@]}"; do
+              line="$(printf '%s\n' "$runs" | awk -F'\t' -v n="$name" '$1 == n' | head -n 1)"
+              status="$(printf '%s' "$line" | cut -f2)"
+              conclusion="$(printf '%s' "$line" | cut -f3)"
+              if [ -z "$line" ] || [ "$status" != "completed" ]; then
+                pending=1
+                echo "waiting: ${name} (${status:-not started})"
+              elif [ "$conclusion" != "success" ]; then
+                failed=1
+                echo "::error::Required check '${name}' concluded '${conclusion}'; not publishing or signing."
+              else
+                echo "passed:  ${name}"
+              fi
+            done
+
+            [ "$failed" -eq 0 ] || exit 1
+            if [ "$pending" -eq 0 ]; then
+              echo "All required checks passed for ${GITHUB_SHA}."
+              exit 0
+            fi
+            sleep 15
+          done
+
+          echo "::error::Timed out waiting for required checks."
+          exit 1
+
   publish-sign:
     name: Publish, Sign, Attest
-    needs: container-security
+    needs: [container-security, release-gate]
 
     # Publish only on pushes to main, or on a manual run (used for the Step 5 test).
     # Pull requests never publish, sign, attest, or request OIDC tokens.
