@@ -100,6 +100,28 @@ done
 expect_page /allocations/4 "Asset Allocations for Smoke Tester"
 login "smoke$$" Smoke_Pass1 /dashboard
 
+# --- A1 NoSQL injection: allocations "threshold" ----------------------------
+# Vulnerable code pasted the threshold into a $where JavaScript string. A
+# tautology returned every user's allocations; a loop hung MongoDB.
+login user1 User1_123 /dashboard
+expect_page "/allocations/2?threshold=0" "Asset Allocations for John Doe"
+
+out="$(req --max-time 10 -G --data-urlencode "threshold=1'; return 1 == '1" "${BASE}/allocations/2" || true)"
+if grep -qE "Will Smith|Node Goat Admin" "$BODY"; then
+  fail "A1: threshold injection exposed other users' allocations (${out})"
+fi
+[ "${out%% *}" = "400" ] || fail "A1: tautology payload returned ${out}, expected 400"
+echo "ok - A1 tautology payload is rejected (400) and leaks no other user's data"
+
+out="$(req --max-time 10 "${BASE}/allocations/2?threshold%5B%24gt%5D=0" || true)"
+[ "${out%% *}" = "400" ] || fail "A1: operator payload threshold[\$gt]=0 returned ${out}, expected 400"
+echo "ok - A1 operator payload threshold[\$gt]=0 is rejected (400)"
+
+# Runs last: on vulnerable code this would tie up MongoDB until curl gives up.
+out="$(req --max-time 10 -G --data-urlencode "threshold=0';while(true){}'" "${BASE}/allocations/2" || true)"
+[ "${out%% *}" = "400" ] || fail "A1: loop payload returned ${out}, expected a fast 400"
+echo "ok - A1 loop payload is rejected (400) without reaching MongoDB"
+
 # Driver errors must not be hiding in the log behind a 200 response.
 if grep -qE "TypeError|MongoServerError|MongoError|UnhandledPromiseRejection" "$TMP/nodegoat.log"; then
   fail "driver or runtime error in application log"

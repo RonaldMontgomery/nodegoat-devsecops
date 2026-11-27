@@ -14,6 +14,7 @@ const assert = require("node:assert");
 
 const matches = (doc, filter) => Object.entries(filter).every(([key, cond]) => {
     if (cond && typeof cond === "object" && "$ne" in cond) return doc[key] !== cond.$ne;
+    if (cond && typeof cond === "object" && "$gt" in cond) return doc[key] > cond.$gt;
     return doc[key] === cond;
 });
 
@@ -44,6 +45,7 @@ class FakeCollection {
     }
     find(filter, ...rest) {
         noCallback("find", rest);
+        this.lastFilter = filter;
         return new FakeCursor(this.docs.filter(doc => matches(doc, filter || {})));
     }
     findOne(filter, ...rest) {
@@ -167,6 +169,59 @@ test("AllocationsDAO.getByUserIdAndThreshold returns the user's allocations", as
     assert.strictEqual(alloc.stocks, 10);
     assert.strictEqual(alloc.firstName, "John");
     await assert.rejects(call(allocations.getByUserIdAndThreshold, "3", undefined), /No allocations found/);
+});
+
+// A1 NoSQL injection: the allocations "threshold" filter used to be pasted into a
+// $where JavaScript string, so "1'; return 1 == '1" returned every user's
+// allocations and "0';while(true){}'" hung the database.
+const allocationsForAllUsers = () => {
+    const db = seededDb();
+    db.collection("allocations").docs.push(
+        { userId: 1, stocks: 40, funds: 40, bonds: 20 },
+        { userId: 3, stocks: 30, funds: 30, bonds: 40 }
+    );
+    return db;
+};
+
+test("A1: threshold is a typed comparison, never server-side JavaScript", async () => {
+    const db = allocationsForAllUsers();
+    const allocations = new AllocationsDAO(db);
+    const result = await call(allocations.getByUserIdAndThreshold, "2", "5");
+    assert.deepStrictEqual(db.collection("allocations").lastFilter, { userId: 2, stocks: { $gt: 5 } });
+    assert.deepStrictEqual(result.map(a => a.userId), [2]);
+});
+
+test("A1: injection payloads are rejected before any query runs", async () => {
+    const payloads = [
+        "1'; return 1 == '1",
+        "0';while(true){}'",
+        "5 || 1 == 1",
+        "-1",
+        "100",
+        "1.5",
+        "abc",
+        { $gt: 0 },
+        ["1", "2"]
+    ];
+    for (const payload of payloads) {
+        const db = allocationsForAllUsers();
+        const allocations = new AllocationsDAO(db);
+        await assert.rejects(call(allocations.getByUserIdAndThreshold, "2", payload),
+            err => err.invalidThreshold === true, `payload not rejected: ${JSON.stringify(payload)}`);
+        assert.strictEqual(db.collection("allocations").lastFilter, undefined,
+            `a query ran for payload ${JSON.stringify(payload)}`);
+    }
+});
+
+test("A1: the rejection message does not echo the attacker's input", async () => {
+    const allocations = new AllocationsDAO(allocationsForAllUsers());
+    await assert.rejects(call(allocations.getByUserIdAndThreshold, "2", "<script>x</script>"),
+        err => !err.message.includes("<script>"));
+});
+
+test("A1: a threshold above every allocation returns an empty list, not an error", async () => {
+    const allocations = new AllocationsDAO(allocationsForAllUsers());
+    assert.deepStrictEqual(await call(allocations.getByUserIdAndThreshold, "2", "99"), []);
 });
 
 test("ContributionsDAO returns defaults, then the saved values", async () => {
