@@ -122,6 +122,26 @@ out="$(req --max-time 10 -G --data-urlencode "threshold=0';while(true){}'" "${BA
 [ "${out%% *}" = "400" ] || fail "A1: loop payload returned ${out}, expected a fast 400"
 echo "ok - A1 loop payload is rejected (400) without reaching MongoDB"
 
+# --- A4 BOLA: /allocations/:userId ------------------------------------------
+# Two synthetic users: user1 (_id 2) and user2 (_id 3). Each may read only
+# their own allocations; changing the id in the URL must be refused.
+login user1 User1_123 /dashboard
+for target in 3 1; do
+  out="$(req "${BASE}/allocations/${target}")"
+  if grep -qE "Will Smith|Node Goat Admin" "$BODY"; then
+    fail "A4: user1 read the allocations of user ${target} (${out})"
+  fi
+  [ "${out%% *}" = "403" ] || fail "A4: user1 GET /allocations/${target} returned ${out}, expected 403"
+  echo "ok - A4 user1 cannot read /allocations/${target} (403)"
+done
+
+login user2 User2_123 /dashboard
+out="$(req "${BASE}/allocations/2")"
+if grep -qF "John Doe" "$BODY"; then fail "A4: user2 read user1's allocations (${out})"; fi
+[ "${out%% *}" = "403" ] || fail "A4: user2 GET /allocations/2 returned ${out}, expected 403"
+echo "ok - A4 user2 cannot read /allocations/2 (403)"
+expect_page /allocations/3 "Asset Allocations for Will Smith"
+
 # Driver errors must not be hiding in the log behind a 200 response.
 if grep -qE "TypeError|MongoServerError|MongoError|UnhandledPromiseRejection" "$TMP/nodegoat.log"; then
   fail "driver or runtime error in application log"
