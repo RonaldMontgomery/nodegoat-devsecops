@@ -99,6 +99,20 @@ code="$(curl --silent --max-time 5 --output /dev/null --write-out '%{http_code}'
 [ "$code" = "000" ] || fail "plain HTTP request got an HTTP ${code} response; expected no HTTP listener"
 echo "ok - plain HTTP is not served (TLS only)"
 
+# --- A5 security headers (helmet) --------------------------------------------
+req "${BASE}/dashboard" > /dev/null
+header() { grep -i "^$1:" "$HEADERS" | tail -n 1 | cut -d: -f2- | tr -d '\r' | sed 's/^ *//'; }
+csp="$(header content-security-policy)"
+[[ "$csp" == *"default-src 'self'"* && "$csp" == *"script-src 'self'"* ]] \
+  || fail "A5: Content-Security-Policy missing or too loose: '${csp}'"
+script_src="$(echo "$csp" | grep -o "script-src [^;]*" || true)"
+[[ "$script_src" != *"unsafe-inline"* ]] || fail "A5: script-src allows inline scripts: '${script_src}'"
+[ "$(header x-content-type-options)" = "nosniff" ] || fail "A5: X-Content-Type-Options is not nosniff"
+[ "$(header x-frame-options)" = "SAMEORIGIN" ] || fail "A5: X-Frame-Options is not SAMEORIGIN"
+[[ "$(header strict-transport-security)" == max-age=* ]] || fail "A5: Strict-Transport-Security missing"
+[ -z "$(header x-powered-by)" ] || fail "A5: X-Powered-By still sent: $(header x-powered-by)"
+echo "ok - A5 security headers: CSP (no inline scripts), HSTS, nosniff, SAMEORIGIN, no X-Powered-By"
+
 expect_page /dashboard "John Doe"
 expect_page /profile "Doe"
 expect_page /allocations/2 "Asset Allocations for John Doe"
@@ -115,6 +129,17 @@ t="$(token /memos)"
 out="$(req --data-urlencode "_csrf=$t" --data "memo=${MEMO}" "${BASE}/memos")"
 [ "${out%% *}" = "200" ] && grep -qF "$MEMO" "$BODY" || fail "POST /memos returned ${out}"
 echo "ok - POST /memos inserts and lists the memo"
+
+# Stored XSS through a memo: raw HTML and script URLs must come back inert.
+t="$(token /memos)"
+req --data-urlencode "_csrf=$t" \
+  --data-urlencode "memo=xss-$$ <script>alert(1)</script> <img src=x onerror=alert(1)> [x](javascript:alert(1))" \
+  "${BASE}/memos" > /dev/null
+grep -qF "xss-$$" "$BODY" || fail "XSS memo was not stored"
+if grep -qiE "<script>alert|<img src=x|href=\"javascript:" "$BODY"; then
+  fail "memo HTML was rendered as markup (stored XSS)"
+fi
+echo "ok - memo with <script>, <img onerror> and javascript: link renders as inert text"
 
 login admin Admin_123 /benefits
 expect_page /benefits "Will"

@@ -10,4 +10,4 @@ If sending PR, once code is ready to commit, run:
 ```
 npm run lint
 ```
-This command uses `js-beautifier` to indent the code and verifies these [coding standards](https://github.com/OWASP/NodeGoat/blob/master/.jshintrc) using `jsHint`. Please resolve all `jsHint` errors before committing the code.
+This command runs ESLint with the rules in [eslint.config.js](eslint.config.js). Please resolve all ESLint errors before committing the code.

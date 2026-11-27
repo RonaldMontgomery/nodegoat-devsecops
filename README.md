@@ -14,7 +14,7 @@ The controls were first built and validated on a small app in [RonaldMontgomery/
 | Workflow | Lab | What it enforces | Blocks on |
 |---|---|---|---|
 | `secret-scan.yml` | 2 | Gitleaks over the pushed commit range (full history checked out) | Any detected secret |
-| `ci.yml` | 3 | `npm ci`, upstream jshint, unit tests, smoke test against seeded MongoDB, packaged artifact, AWS OIDC identity check on `main` | Install, lint or test failure |
+| `ci.yml` | 3 | `npm ci`, ESLint, unit tests, smoke test against seeded MongoDB, packaged artifact, AWS OIDC identity check on `main` | Install, lint or test failure |
 | `sast.yml` | 4 | `semgrep --test` on custom rules, then `--config auto` + custom rules with `--error` | Any Semgrep finding |
 | `action-pinning.yml` | 4 | Rejects `@main`, `@master`, `@vN` action references | Any floating reference |
 | `sca.yml` | 5 | Trivy CycloneDX SBOM (artifact) + `trivy fs` | Any CRITICAL dependency CVE |
@@ -26,7 +26,7 @@ The controls were first built and validated on a small app in [RonaldMontgomery/
 flowchart TD
   Dev["Local commit"] -->|Gitleaks pre-commit| Push["Push / PR"]
   Push --> SS["Secret Scan"]
-  Push --> CI["CI: npm ci, jshint, unit + smoke tests, package"]
+  Push --> CI["CI: npm ci, ESLint, unit + smoke tests, package"]
   Push --> SAST["Semgrep + custom rules"]
   Push --> PIN["Action Pinning"]
   Push --> SCA["Trivy SBOM + CVE gate"]
@@ -66,7 +66,7 @@ Gitleaks did not flag the hard-coded `cookieSecret` and `cryptoKey` in `config/e
 `build-test` runs on every push and on PRs to `main`, with a disposable `mongo:4.4` service container:
 
 1. `npm ci` (upstream Grunt, Cypress 3, Mocha/Selenium/ZAP and `forever` tooling removed; see the dependency cleanup PR)
-2. `npx jshint .` (upstream lint config; replaces upstream's unpinned `lint.yml`)
+2. `npm run lint`: ESLint with [eslint.config.js](eslint.config.js) (replaced upstream jshint and its unpinned `lint.yml`)
 3. `npm run test:unit`: Node built-in test runner: Lab 2 secret handling ([config.test.js](test/ci/config.test.js)), MongoDB driver 7 DAO contracts and A1 injection tests ([dao.test.js](test/ci/dao.test.js)), A4 BOLA tests ([authz.test.js](test/ci/authz.test.js))
 4. [scripts/smoke-test.sh](scripts/smoke-test.sh): seeds MongoDB, starts the app in production mode with throwaway secrets, checks `GET /login` returns 200, checks anonymous requests to `/dashboard`, `/profile`, `/contributions`, `/memos` redirect to `/login`, and checks the session secret never appears in the app log; then logs in as two synthetic users and exercises every DAO, the A1 injection payloads and the A4 cross-user requests against the real database
 5. Package `app.tar.gz` (excludes `.git`, `.github`, `node_modules`, env files, `.npmrc`) and upload it as `app-<sha>`, retained for 14 days

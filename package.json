@@ -9,7 +9,6 @@
     "body-parser": "^1.15.1",
     "consolidate": "^0.14.1",
     "csurf": "^1.8.3",
-    "dont-sniff-mimetype": "^1.0.0",
     "express": "^4.21.2",
     "express-session": "^1.13.0",
     "helmet": "^2.0.0",
@@ -29,7 +28,7 @@
     "dev": "cross-env PORT=5000 node --watch server.js",
     "test": "npm run test:unit",
     "test:unit": "node --test test/ci/*.test.js",
-    "lint": "jshint .",
+    "lint": "eslint .",
     "db:seed": "cross-env NODE_ENV=test node artifacts/db-reset.js",
     "precommit": "npm run lint",
     "docker-mongo": "docker run -p 127.0.0.1:27017:27017 --name mongo mongo:4.4",
@@ -37,8 +36,7 @@
     "stop-infra": "docker-compose down"
   },
   "devDependencies": {
-    "cross-env": "^7.0.2",
-    "jshint": "2.12.0"
+    "cross-env": "^7.0.2"
   },
   "repository": "https://github.com/OWASP/NodejsGoat",
   "license": "Apache 2.0",

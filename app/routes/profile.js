@@ -26,7 +26,7 @@ function ProfileHandler(db) {
             // doesn't end up as an XSS attack, the context is incorrect as it is encoding the firstname for HTML
             // while this same variable is also used in the context of a URL link element
             doc.website = ESAPI.encoder().encodeForHTML(doc.website);
-            // fix it by replacing the above with another template variable that is used for 
+            // fix it by replacing the above with another template variable that is used for
             // the context of a URL in a link header
             // doc.website = ESAPI.encoder().encodeForURL(doc.website)
 
