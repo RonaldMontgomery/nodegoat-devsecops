@@ -14,9 +14,13 @@
 
                 <form action="/research" method="get" role="search">
                     <div class="form-group">
-                        <input type="hidden" id="url" name="url" value="https://finance.yahoo.com/quote/"/>
-                        <input type="text" class="form-control" placeholder="Stock Symbol" name="symbol" />
-                        <p class="help-block">Enter Stock Symbol.</p>
+                        <!-- Fix for SSRF: no "url" field; the server only accepts a symbol and
+                        redirects to a fixed quote site instead of fetching anything itself. -->
+                        <input type="text" class="form-control" placeholder="Stock Symbol" name="symbol" maxlength="12" />
+                        <p class="help-block">Enter Stock Symbol. Opens the quote on Yahoo Finance.</p>
+                        {% if symbolError %}
+                        <p class="text-danger">{{symbolError}}</p>
+                        {% endif %}
                     </div>
 
                     <button type="submit" class="btn btn-primary">Submit</button>

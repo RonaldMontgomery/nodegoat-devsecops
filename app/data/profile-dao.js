@@ -1,4 +1,5 @@
 const { toCallback } = require("./mongo");
+const { encryptField, decryptField, isEncrypted } = require("../field-crypto");
 
 /* The ProfileDAO must be constructed with a connected database object */
 function ProfileDAO(db) {
@@ -14,32 +15,9 @@ function ProfileDAO(db) {
 
     const users = db.collection("users");
 
-    /* Fix for A6 - Sensitive Data Exposure
-
-    // Use crypto module to save sensitive data such as ssn, dob in encrypted format
-    const crypto = require("crypto");
-    const config = require("../../config/config");
-
-    /// Helper method create initialization vector
-    // By default the initialization vector is not secure enough, so we create our own
-    const createIV = () => {
-        // create a random salt for the PBKDF2 function - 16 bytes is the minimum length according to NIST
-        const salt = crypto.randomBytes(16);
-        return crypto.pbkdf2Sync(config.cryptoKey, salt, 100000, 512, "sha512");
-    };
-
-    // Helper methods to encryt / decrypt
-    const encrypt = (toEncrypt) => {
-        config.iv = createIV();
-        const cipher = crypto.createCipheriv(config.cryptoAlgo, config.cryptoKey, config.iv);
-        return `${cipher.update(toEncrypt, "utf8", "hex")} ${cipher.final("hex")}`;
-    };
-
-    const decrypt = (toDecrypt) => {
-        const decipher = crypto.createDecipheriv(config.cryptoAlgo, config.cryptoKey, config.iv);
-        return `${decipher.update(toDecrypt, "hex", "utf8")} ${decipher.final("utf8")}`;
-    };
-    */
+    // Fix for A6 - Sensitive Data Exposure: these fields are encrypted before they reach
+    // MongoDB and decrypted only when the owner's profile is read (app/field-crypto.js).
+    const SENSITIVE_FIELDS = ["ssn", "dob", "bankAcc", "bankRouting"];
 
     this.updateUser = (userId, firstName, lastName, ssn, dob, address, bankAcc, bankRouting, callback) => {
 
@@ -66,21 +44,17 @@ function ProfileDAO(db) {
         if (dob) {
             user.dob = dob;
         }
-        /*
-        // Fix for A7 - Sensitive Data Exposure
-        // Store encrypted ssn and DOB
-        if(ssn) {
-            user.ssn = encrypt(ssn);
-        }
-        if(dob) {
-            user.dob = encrypt(dob);
-        }
-        */
+        // Store the sensitive fields encrypted; the plaintext copy in `user` is only
+        // returned to the route so the owner sees what they entered.
+        const stored = { ...user };
+        SENSITIVE_FIELDS.filter(field => field in stored).forEach(field => {
+            stored[field] = encryptField(stored[field]);
+        });
 
         toCallback(users.updateOne({
                 _id: parseInt(userId)
             }, {
-                $set: user
+                $set: stored
             }),
             err => {
                 if (!err) {
@@ -99,12 +73,18 @@ function ProfileDAO(db) {
             }),
             (err, user) => {
                 if (err) return callback(err, null);
-                /*
-                // Fix for A6 - Sensitive Data Exposure
-                // Decrypt ssn and DOB values to display to user
-                user.ssn = user.ssn ? decrypt(user.ssn) : "";
-                user.dob = user.dob ? decrypt(user.dob) : "";
-                */
+                if (!user) return callback(null, user);
+
+                SENSITIVE_FIELDS.filter(field => isEncrypted(user[field])).forEach(field => {
+                    try {
+                        user[field] = decryptField(user[field]);
+                    } catch (decryptErr) {
+                        // Tampered, or encrypted with a different CRYPTO_KEY: show nothing
+                        // rather than a wrong value, and leave a trace in the log.
+                        console.error(`Could not decrypt ${field} for user ${user._id}: ${decryptErr.message}`);
+                        user[field] = "";
+                    }
+                });
 
                 callback(null, user);
             }
