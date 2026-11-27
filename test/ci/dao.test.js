@@ -42,9 +42,9 @@ class FakeCollection {
     constructor() {
         this.docs = [];
     }
-    find(filter = {}, ...rest) {
+    find(filter, ...rest) {
         noCallback("find", rest);
-        return new FakeCursor(this.docs.filter(doc => matches(doc, filter)));
+        return new FakeCursor(this.docs.filter(doc => matches(doc, filter || {})));
     }
     findOne(filter, ...rest) {
         noCallback("findOne", rest);
@@ -56,8 +56,9 @@ class FakeCollection {
         this.docs.push({ ...doc });
         return Promise.resolve({ acknowledged: true, insertedId: doc._id });
     }
-    replaceOne(filter, replacement, options = {}, ...rest) {
-        noCallback("replaceOne", [options, ...rest]);
+    replaceOne(filter, replacement, ...rest) {
+        noCallback("replaceOne", rest);
+        const options = rest[0] || {};
         const index = this.docs.findIndex(d => matches(d, filter));
         if (index >= 0) this.docs[index] = { ...replacement, _id: this.docs[index]._id };
         else if (options.upsert) this.docs.push({ ...replacement });
@@ -69,8 +70,9 @@ class FakeCollection {
         if (doc) Object.assign(doc, update.$set);
         return Promise.resolve({ acknowledged: true, matchedCount: doc ? 1 : 0 });
     }
-    findOneAndUpdate(filter, update, options = {}, ...rest) {
-        noCallback("findOneAndUpdate", [options, ...rest]);
+    findOneAndUpdate(filter, update, ...rest) {
+        noCallback("findOneAndUpdate", rest);
+        const options = rest[0] || {};
         assert.strictEqual(options.returnDocument, "after", "counter must return the updated document");
         const doc = this.docs.find(d => matches(d, filter));
         if (!doc) return Promise.resolve(null);
