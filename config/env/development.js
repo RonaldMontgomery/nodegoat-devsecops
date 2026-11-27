@@ -6,9 +6,7 @@ module.exports = {
    zapApiKey: process.env.ZAP_API_KEY,
    // Required if debugging security regression tests.
    zapApiFeedbackSpeed: 5000, // Milliseconds.
-   environmentalScripts: [
-      // jshint -W101
-      `<script>document.write("<script src='http://" + (location.host || "localhost").split(":")[0] + ":35729/livereload.js'></" + "script>");</script>`
-      // jshint +W101
-   ]
+   // The upstream livereload snippet was removed with Grunt; it also needed an inline
+   // script, which the Content-Security-Policy now forbids.
+   environmentalScripts: []
 };

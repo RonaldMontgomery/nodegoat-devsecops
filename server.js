@@ -7,12 +7,11 @@ const session = require("express-session");
 const csrf = require("csurf");
 const consolidate = require("consolidate"); // Templating library adapter for Express
 const swig = require("swig");
-// const helmet = require("helmet");
+const helmet = require("helmet");
 const { connect } = require("./app/data/mongo"); // MongoDB driver 7.x connection helper
 const fs = require("fs");
 const https = require("https");
-const marked = require("marked");
-//const nosniff = require('dont-sniff-mimetype');
+const { renderMemo } = require("./app/markdown");
 const app = express(); // Web framework to handle routing requests
 const routes = require("./app/routes");
 const {
@@ -49,34 +48,19 @@ connect(db, (err, db) => {
     }
     console.log(`Connected to the database`);
 
-    /*
-    // Fix for A5 - Security MisConfig
-    // TODO: Review the rest of helmet options, like "xssFilter"
-    // Remove default x-powered-by response header
-    app.disable("x-powered-by");
-
-    // Prevent opening page in frame or iframe to protect from clickjacking
-    app.use(helmet.frameguard()); //xframe deprecated
-
-    // Prevents browser from caching and storing page
-    app.use(helmet.noCache());
-
-    // Allow loading resources only from white-listed domains
-    app.use(helmet.contentSecurityPolicy()); //csp deprecated
-
-    // Allow communication only on HTTPS
-    app.use(helmet.hsts());
-
-    // TODO: Add another vuln: https://github.com/helmetjs/helmet/issues/26
-    // Enable XSS filter in IE (On by default)
-    // app.use(helmet.iexss());
-    // Now it should be used in hit way, but the README alerts that could be
-    // dangerous, like specified in the issue.
-    // app.use(helmet.xssFilter({ setOnOldIE: true }));
-
-    // Forces browser to only use the Content-Type set in the response header instead of sniffing or guessing it
-    app.use(nosniff());
-    */
+    // Fix for A5 - Security Misconfiguration: security headers on every response,
+    // including static assets. helmet's defaults add a Content-Security-Policy
+    // (scripts only from this origin; no inline scripts), Strict-Transport-Security,
+    // X-Content-Type-Options: nosniff, X-Frame-Options: SAMEORIGIN and Referrer-Policy,
+    // and remove X-Powered-By. The tutorial pages embed YouTube videos, so frame-src
+    // allows that one origin. scripts/smoke-test.sh checks the headers.
+    app.use(helmet({
+        contentSecurityPolicy: {
+            directives: {
+                "frame-src": ["'self'", "https://www.youtube.com"]
+            }
+        }
+    }));
 
     // Adding/ remove HTTP Headers for security
     app.use(favicon(__dirname + "/app/assets/favicon.ico"));
@@ -139,12 +123,10 @@ connect(db, (err, db) => {
     app.use(express.static(`${__dirname}/app/assets`));
 
 
-    // Initializing marked library
-    // Fix for A9 - Insecure Dependencies
-    marked.setOptions({
-        sanitize: true
-    });
-    app.locals.marked = marked;
+    // Fix for A9 - Insecure Dependencies: current marked (the old 0.3.5 had six open
+    // CVEs). marked removed its sanitize option, so app/markdown.js escapes raw HTML
+    // and refuses unsafe link targets itself. Templates call it as marked(text).
+    app.locals.marked = renderMemo;
 
     // Application routes
     routes(app, db);

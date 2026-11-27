@@ -37,8 +37,8 @@ jobs:
         id: install
         run: npm ci
 
-      - name: Lint (upstream jshint config)
-        run: npx --no-install jshint .
+      - name: Lint (ESLint; replaces upstream jshint)
+        run: npm run lint
 
       - name: Unit tests
         run: npm run test:unit
