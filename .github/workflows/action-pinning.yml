@@ -11,6 +11,7 @@ jobs:
   enforce-action-pins:
     name: Enforce Action SHA Pins
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout repository
