@@ -1,23 +1,14 @@
 name: IaC Policy
 
 on:
-  # Manual run button; also used because path filters skip a brand-new branch's first push.
+  # Manual run button.
   workflow_dispatch:
+  # No path filters: the release gate requires this check for the exact commit it
+  # publishes, so it must run on every main commit (it takes about a minute).
   push:
     branches: [main]
-    paths:
-      - "infra/**"
-      - "policy/**"
-      - "k8s/**"
-      - "docker-compose.yml"
-      - ".github/workflows/iac-policy.yml"
+  # Every pull request too, so branch protection can require this check.
   pull_request:
-    paths:
-      - "infra/**"
-      - "policy/**"
-      - "k8s/**"
-      - "docker-compose.yml"
-      - ".github/workflows/iac-policy.yml"
 
 permissions:
   contents: read
