@@ -12,6 +12,7 @@ permissions:
 jobs:
   container-security:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     # Disposable MongoDB so the built image can be started and tested, not only scanned.
     services:
@@ -136,8 +137,10 @@ jobs:
 
     env:
       GH_TOKEN: ${{ github.token }}
-      # Check-run (job) names from ci.yml, sast.yml, sca.yml, secret-scan.yml, action-pinning.yml.
-      REQUIRED_CHECKS: "build-test|Semgrep SAST|sca|Gitleaks|Enforce Action SHA Pins"
+      # Check-run (job) names from ci.yml, sast.yml, sca.yml, secret-scan.yml,
+      # action-pinning.yml and iac-policy.yml. A failed Checkov/OPA/Conftest check
+      # (infrastructure policy) stops publishing and therefore deployment.
+      REQUIRED_CHECKS: "build-test|Semgrep SAST|sca|Gitleaks|Enforce Action SHA Pins|Terraform, Checkov, OPA and Conftest"
 
     steps:
       - name: Wait for all required checks on this commit
@@ -189,6 +192,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     permissions:
       contents: read
@@ -306,6 +310,7 @@ jobs:
     name: Verify Provenance and Signature
     needs: publish-sign
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     permissions:
       contents: read

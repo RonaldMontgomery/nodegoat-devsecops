@@ -71,7 +71,7 @@ Gitleaks did not flag the hard-coded `cookieSecret` and `cryptoKey` in `config/e
 4. [scripts/smoke-test.sh](scripts/smoke-test.sh): seeds MongoDB, starts the app in production mode with throwaway secrets, checks `GET /login` returns 200, checks anonymous requests to `/dashboard`, `/profile`, `/contributions`, `/memos` redirect to `/login`, and checks the session secret never appears in the app log; then logs in as two synthetic users and exercises every DAO, the A1 injection payloads and the A4 cross-user requests against the real database
 5. Package `app.tar.gz` (excludes `.git`, `.github`, `node_modules`, env files, `.npmrc`) and upload it as `app-<sha>`, retained for 14 days
 
-`aws-oidc` runs on `main` only, after `build-test`, and only once the `AWS_ROLE_ARN` repository variable is set (the IAM trust policy must first name this repository's OIDC subject). It prints the token subject/audience and runs `aws sts get-caller-identity`. No long-lived AWS keys exist.
+AWS access is used only by the `Deploy to EC2` job (`container-security.yml`, `production` environment, `main` only) and the optional Terraform plan job; see [docs/deployment.md](docs/deployment.md). The Lab 3 `aws-oidc` identity check was removed once the deploy job exercised the same OIDC path. No long-lived AWS keys exist.
 
 Upstream's `e2e-test.yml` (Cypress on Node 10–14) and `lint.yml` were removed. Both used unpinned `@v1`/`@v2` actions that the pinning check rejects.
 
@@ -175,8 +175,8 @@ pre-commit install          # Gitleaks hook
 
 ## Repository settings to apply after the first push
 
-1. **Branch protection on `main`:** require PRs and the status checks `build-test`, `Semgrep SAST`, `Enforce Action SHA Pins`, `Gitleaks`, `sca` and `container-security`. Block bypass, including for administrators. Under the solo-student exception, approvals are not required.
-2. **Variables** (Settings → Secrets and variables → Actions → Variables): set `AWS_ROLE_ARN` and `AWS_PLAN_ROLE_ARN`. The first `aws-oidc` run prints this repository's exact OIDC subject before it tries to assume the role. In Lab 3 that subject included numeric owner and repository IDs. Add it to the IAM trust policies, then re-run.
+1. **Branch protection on `main`:** require PRs and the status checks `build-test`, `Semgrep SAST`, `Enforce Action SHA Pins`, `Gitleaks`, `sca`, `container-security` and `Terraform, Checkov, OPA and Conftest`. Block bypass, including for administrators. Under the solo-student exception, approvals are not required.
+2. **Variables** (Settings → Secrets and variables → Actions → Variables): `AWS_DEPLOY_ROLE_ARN` and `DEPLOY_INSTANCE_ID` from `terraform output` (see [docs/deployment.md](docs/deployment.md)); optionally `AWS_PLAN_ROLE_ARN` for the Terraform plan job. The deploy job prints the OIDC subject it presents; it includes numeric owner and repository IDs.
 3. **Packages:** after the first publish, confirm the GHCR package is linked to this repository.
 
 ## Evidence
