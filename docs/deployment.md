@@ -44,7 +44,7 @@ flowchart LR
 | Images in Amazon ECR | GitHub Container Registry (public) | Signatures and provenance live next to the image; no AWS registry permissions or pull credentials on the host; no storage cost. The host pulls by digest only. |
 | Host verifies signer, signature, digest **and provenance/source commit** | CI's `verify` job checks the signature and SLSA provenance (commit and workflow) immediately before deploy; the host checks the Cosign signature and signer identity again, and the digest | Provenance check on the host is a possible addition (`cosign verify-attestation`); the deploy role can only pass a digest that `verify` already approved. |
 | Deploy role "publishes to ECR and invokes SSM" | Deploy role only sends one SSM document to one instance; publishing uses `GITHUB_TOKEN` to GHCR | Narrower role. |
-| `$10` budget alert | Budget set to `$10` | — |
+| `$10` budget alert | `$20` monthly budget with alerts (the limit for this account) | Matches the account's existing course budget; EX-02 is sized against it. Alerts do not cap spending, so the host is stopped when idle. |
 
 ## Secrets (created once in CloudShell; values never leave AWS)
 
